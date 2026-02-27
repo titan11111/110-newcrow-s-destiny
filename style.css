@@ -1,0 +1,312 @@
+/* ============================================================
+   CROW'S DESTINY — 横スクロールSTG iOS最適化版
+   ============================================================ */
+*{margin:0;padding:0;box-sizing:border-box}
+*{touch-action:manipulation}
+body{
+    -webkit-user-select:none;user-select:none;
+    -webkit-touch-callout:none;overscroll-behavior:none;
+    /* iOS Safari: ダブルタップズーム完全防止 */
+    -ms-touch-action:manipulation;
+    touch-action:manipulation;
+}
+html,body{
+    overflow:hidden;position:fixed;width:100%;height:100%;
+    /* iOS バウンスエフェクト無効化 */
+    overscroll-behavior-y:none;
+    -webkit-overflow-scrolling:auto;
+}
+html{
+    touch-action:manipulation;
+}
+body{
+    background:#0a0510;color:#e0cda7;font-family:'Georgia',serif;
+    display:flex;justify-content:center;align-items:center;
+    min-height:100vh;min-height:100dvh;
+}
+#game-container{
+    position:relative;border:3px solid #3d2b1f;
+    box-shadow:0 0 60px rgba(0,0,0,.9);
+    max-width:100vw;width:100%;
+    height:100dvh;max-height:100dvh;
+    box-sizing:border-box;
+    overflow:hidden;
+    display:flex;
+    /* iOS Safe Area: ノッチ・ホームバー回避（constant は iOS 11 向け） */
+    padding-top:constant(safe-area-inset-top);
+    padding-top:env(safe-area-inset-top,0);
+    padding-bottom:constant(safe-area-inset-bottom);
+    padding-bottom:env(safe-area-inset-bottom,0);
+}
+
+/* 左右コントロールパネル（幅固定） */
+.side-panel{
+    width:160px;
+    flex-shrink:0;
+    background:rgba(20,25,30,0.6);
+    position:relative;
+    z-index:10;
+}
+/* 左パネル常時ジョイスティックは廃止。タッチ時にキャンバス上に仮想ジョイスティックが出現する */
+#left-panel{
+    display:none;
+}
+#right-panel{
+    border-left:2px solid rgba(255,255,255,0.1);
+}
+
+/* 中央パネル: プレイ画面（残り幅をすべて使用） */
+#center-panel{
+    flex-grow:1;
+    position:relative;
+    background:#1a1e24;
+    overflow:hidden;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-width:0;
+}
+
+/* キャンバスは中央パネル内に収める */
+#center-panel canvas{
+    display:block;
+    image-rendering:pixelated;
+    image-rendering:crisp-edges;
+    width:100%;
+    height:100%;
+    object-fit:contain;
+}
+canvas{
+    image-rendering:pixelated;
+    image-rendering:crisp-edges;
+}
+
+#loading-screen{
+    position:absolute;top:0;left:0;right:0;bottom:0;
+    background:#000;display:flex;flex-direction:column;
+    justify-content:center;align-items:center;z-index:100;transition:opacity 1.5s;
+    pointer-events:auto;
+}
+#loading-screen h1{color:#ff4d00;letter-spacing:6px;font-size:clamp(14px,4vw,20px)}
+.altar-light{
+    width:220px;height:2px;background:#ff4d00;
+    box-shadow:0 0 25px #ff4d00;animation:flicker .1s infinite;
+}
+@keyframes flicker{0%{opacity:.8}50%{opacity:1}100%{opacity:.8}}
+
+/* ======= 左パネル ジョイスティック ======= */
+#joystick-zone{
+    width:100%;
+    height:100%;
+    position:relative;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+#joystick-base{
+    width:120px;
+    height:120px;
+    background:rgba(60,50,40,0.3);
+    border:2px solid rgba(180,150,120,0.5);
+    border-radius:50%;
+    position:relative;
+    margin-left:2mm;
+}
+#joystick-stick{
+    width:50px;
+    height:50px;
+    background:rgba(180,150,120,0.8);
+    border-radius:50%;
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    pointer-events:none;
+    box-shadow:0 4px 8px rgba(0,0,0,0.5);
+}
+
+/* ======= 右パネル アクションボタン ======= */
+#right-panel #action-buttons{
+    position:absolute;
+    top:max(16px, env(safe-area-inset-top, 16px));
+    right:0;
+    bottom:max(16px, env(safe-area-inset-bottom, 16px));
+    left:0;
+    padding:12px 12px 16px;
+    display:flex;
+    flex-direction:column;
+    align-items:flex-end;
+    justify-content:space-between;
+    gap:0;
+    pointer-events:none;
+}
+#right-panel #action-buttons button{
+    pointer-events:auto;
+}
+#right-panel .action-buttons-top,
+#right-panel .action-buttons-bottom{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-end;
+    gap:12px;
+}
+#right-panel .action-buttons-bottom{
+    margin-top:auto;
+}
+
+#action-buttons button{
+    -webkit-tap-highlight-color:transparent;
+    -webkit-touch-callout:none;
+    touch-action:manipulation;
+    min-width:56px;min-height:56px;padding:10px;font-size:17px;
+    font-family:inherit;color:#e0cda7;
+    background:rgba(61,43,31,.7);border:2px solid #4a3528;
+    border-radius:12px;cursor:pointer;opacity:.8;
+    transition:transform .06s,opacity .06s,background .06s;
+    display:flex;align-items:center;justify-content:center;
+    /* ゴースト選択防止 */
+    -webkit-user-select:none;user-select:none;
+}
+#dpad button:active,#action-buttons button:active{
+    transform:scale(.92);opacity:1;background:rgba(120,80,55,.9);
+}
+/* 打感: タップ直後のクラスで押下感（iOS含む） */
+#action-buttons button.tap-press{
+    transform:scale(.92);opacity:1;background:rgba(140,90,60,.95);
+}
+@media (hover:none) and (pointer:coarse){
+    #action-buttons button:active{
+        transform:scale(.9);transition:transform .03s,opacity .03s;
+    }
+}
+#action-buttons{display:flex;flex-direction:column;gap:0}
+#action-buttons button{min-width:76px;min-height:56px;font-size:15px;letter-spacing:1px}
+#btn-pause{
+    font-size:20px;letter-spacing:2px;min-width:56px;
+    background:rgba(61,43,31,.85);border-color:#4a3528;
+}
+#btn-dash{
+    background:rgba(80,50,35,.7);border-color:#6a4a38;
+}
+#btn-skill{
+    background:rgba(70,45,75,.75);border-color:#6a4a6a;
+    color:#cc88ff;
+}
+.ability-buttons{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:4px;
+    max-width:100%;
+}
+.ability-buttons button{
+    background:rgba(70,45,75,.75);border-color:#6a4a6a;
+    color:#cc88ff;
+    min-width:0;min-height:40px;
+    font-size:14px;padding:4px;
+}
+.ability-buttons button:disabled,
+.ability-buttons button.locked{
+    opacity:0.4;color:#666;pointer-events:none;
+}
+
+/* 縦向き時「横にしてください」オーバーレイ */
+.portrait-message{
+    display:none;
+    position:fixed;
+    inset:0;
+    z-index:9999;
+    background:rgba(10,5,16,0.95);
+    align-items:center;
+    justify-content:center;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.portrait-message.is-visible{
+    display:flex;
+}
+.portrait-message p{
+    font-family:Cinzel,Georgia,serif;
+    font-size:clamp(20px,5vw,28px);
+    color:#e0cda7;
+    text-align:center;
+    margin:0;
+}
+
+/* 右パネル内ボタン 小型画面 */
+@media (max-height:600px){
+    #right-panel #action-buttons button{
+        min-width:46px;min-height:46px;font-size:14px;padding:6px;
+    }
+    #right-panel #action-buttons button{min-width:64px;min-height:46px}
+    .ability-buttons button{min-height:34px;font-size:12px;}
+}
+
+/* 右パネル内ボタン 大型画面 */
+@media (min-height:800px){
+    #right-panel #action-buttons button{
+        min-width:62px;min-height:62px;font-size:18px;
+    }
+    #right-panel #action-buttons button{min-width:84px}
+}
+
+/* ランドスケープ（横持ち）最適化 */
+@media (orientation:landscape) and (max-height:500px){
+    #right-panel #action-buttons button{
+        min-width:48px;min-height:48px;font-size:13px;padding:4px;
+        border-radius:8px;
+    }
+    #right-panel .action-buttons-top,
+    #right-panel .action-buttons-bottom{gap:8px}
+    #right-panel #action-buttons button{min-width:60px;min-height:48px}
+    .ability-buttons button{min-height:32px;font-size:11px;}
+    .ability-buttons{gap:2px;}
+}
+
+/* ======= ジョイスティック設定オーバーレイ ======= */
+.settings-overlay{
+    display:none;
+    position:fixed;inset:0;z-index:2000;
+    background:rgba(0,0,0,0.85);
+    align-items:center;justify-content:center;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.settings-overlay.is-open{display:flex}
+.settings-panel{
+    background:rgba(30,22,18,0.98);
+    border:2px solid #4a3528;
+    border-radius:16px;
+    padding:24px;
+    max-width:90vw;width:360px;
+    -webkit-tap-highlight-color:transparent;
+}
+.settings-title{
+    font-size:16px;color:#e0cda7;margin:16px 0 8px;
+    font-family:Georgia,serif;
+}
+.settings-title:first-child{margin-top:0}
+.settings-row{
+    display:flex;align-items:center;gap:12px;
+}
+.settings-row input[type=range]{flex:1;min-width:0;accent-color:#ff4d00}
+.settings-label{font-size:12px;color:#aa8866;min-width:2.2em}
+.settings-value{font-size:14px;color:#c9b896;margin:4px 0}
+.settings-test-area{
+    margin:20px 0;
+    min-height:100px;
+    background:rgba(0,0,0,0.4);
+    border:2px dashed #4a3528;
+    border-radius:12px;
+    display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+    touch-action:none;
+}
+.settings-test-label{font-size:13px;color:#8a7a5c;margin-bottom:8px}
+.settings-test-out{font-size:18px;color:#e0cda7;font-family:monospace}
+.settings-back{
+    display:block;
+    width:100%;margin-top:16px;padding:14px;
+    font-size:18px;font-family:Georgia,serif;color:#e0cda7;
+    background:rgba(61,43,31,0.9);border:2px solid #4a3528;
+    border-radius:12px;cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+}
+.settings-back:active{transform:scale(0.98);opacity:0.9}

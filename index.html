@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>CROW'S DESTINY: THE RITUAL OF TWILIGHT</title>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- 縦向き時のみ表示：横画面でプレイするよう促す -->
+<div id="portrait-message" class="portrait-message" aria-hidden="true">
+    <p>横にしてください</p>
+</div>
+
+<div id="game-container">
+    <div id="loading-screen">
+        <h1>RITUAL INITIALIZING...</h1>
+        <div class="altar-light"></div>
+    </div>
+
+    <!-- 左パネル: ジョイスティック（幅固定） -->
+    <div id="left-panel" class="side-panel">
+        <div id="joystick-zone">
+            <div id="joystick-base">
+                <div id="joystick-stick"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 中央パネル: プレイ画面 -->
+    <div id="center-panel">
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <!-- 右パネル: 右上＝START・ポーズ、右下＝スキル・DASH（設定ボタンなし） -->
+    <div id="right-panel" class="side-panel">
+        <div id="action-buttons">
+            <div class="action-buttons-top" aria-label="操作ボタン 上">
+                <button id="btn-pause" type="button" aria-label="一時停止" title="一時停止">Ⅱ</button>
+                <button id="btn-start" type="button" aria-label="開始">START</button>
+            </div>
+            <div class="action-buttons-bottom" aria-label="操作ボタン 下">
+                <button id="btn-skill" type="button" aria-label="スキル切替・発動" title="タップで切替・長押しで発動">スキル</button>
+                <button id="btn-dash" type="button" aria-label="ダッシュ" title="スペース/Shift/Xでも可">DASH</button>
+            </div>
+        </div>
+    </div>
+</div>
+<div id="joystick-settings-overlay" class="settings-overlay" aria-hidden="true">
+    <div class="settings-panel">
+        <h2 class="settings-title">音量</h2>
+        <div class="settings-row">
+            <span class="settings-label">BGM</span>
+            <input type="range" id="volume-bgm" min="0" max="100" value="60" aria-label="BGM音量">
+        </div>
+        <p class="settings-value">BGM: <output id="out-bgm-volume">60</output>%</p>
+        <div class="settings-row">
+            <span class="settings-label">SE</span>
+            <input type="range" id="volume-se" min="0" max="100" value="70" aria-label="SE音量">
+        </div>
+        <p class="settings-value">SE: <output id="out-se-volume">70</output>%</p>
+        <h2 class="settings-title">操作感度</h2>
+        <div class="settings-row">
+            <span class="settings-label">鈍感</span>
+            <input type="range" id="joystick-sensitivity" min="0.5" max="2" step="0.1" value="1.0" aria-label="感度">
+            <span class="settings-label">敏感</span>
+        </div>
+        <p class="settings-value">感度: <output id="out-sensitivity">1.0</output></p>
+        <h2 class="settings-title">デッドゾーン</h2>
+        <div class="settings-row">
+            <span class="settings-label">小</span>
+            <input type="range" id="joystick-deadzone" min="0" max="0.4" step="0.05" value="0.15" aria-label="デッドゾーン">
+            <span class="settings-label">大</span>
+        </div>
+        <p class="settings-value">デッドゾーン: <output id="out-deadzone">0.15</output></p>
+        <div class="settings-test-area" id="joystick-test-area">
+            <span class="settings-test-label">テストエリア（ここでドラッグ）</span>
+            <output id="out-test-xy" class="settings-test-out">X: 0.00  Y: 0.00</output>
+        </div>
+        <button type="button" id="btn-settings-back" class="settings-back">戻る</button>
+    </div>
+</div>
+<!-- 役割ごとの読み込み順（依存関係を満たす） -->
+<script src="js/core/config.js"></script>
+<script src="js/core/utils.js"></script>
+<script src="js/core/objectPool.js"></script>
+<script src="js/data/stages.js"></script>
+<script src="js/load/assets.js"></script>
+<script src="js/audio/sound.js"></script>
+<script src="js/render/anim.js"></script>
+<script src="js/render/fx.js"></script>
+<script src="js/render/background.js"></script>
+<script src="js/render/hud.js"></script>
+<script src="js/entities/crow.js"></script>
+<!-- 敵: 定数 → 振る舞い(blue/gargoyle/ghost/homunculus/cyborg/beast/cosmic/normal) → 描画 → 本体 -->
+<script src="js/entities/enemy/config.js"></script>
+<script src="js/entities/enemy/behaviors/blue.js"></script>
+<script src="js/entities/enemy/behaviors/gargoyle.js"></script>
+<script src="js/entities/enemy/behaviors/ghost.js"></script>
+<script src="js/entities/enemy/behaviors/homunculus.js"></script>
+<script src="js/entities/enemy/behaviors/steam_wolf.js"></script>
+<script src="js/entities/enemy/behaviors/mechanical_bat.js"></script>
+<script src="js/entities/enemy/behaviors/cyborg.js"></script>
+<script src="js/entities/enemy/behaviors/beast.js"></script>
+<script src="js/entities/enemy/behaviors/cosmic.js"></script>
+<script src="js/entities/enemy/behaviors/normal.js"></script>
+<script src="js/entities/enemy/draw.js"></script>
+<script src="js/entities/enemy/Enemy.js"></script>
+<script src="js/entities/obstacle.js"></script>
+<!-- ボス: 基底クラス → 実装（update/draw） -->
+<script src="js/entities/boss/BossBase.js"></script>
+<script src="js/entities/boss.js"></script>
+<script src="js/entities/relic.js"></script>
+<script src="js/input/joystick.js"></script>
+<!-- ゲームサブモジュール（役割ごと分割） -->
+<script src="js/game/constants.js"></script>
+<script src="js/game/bullets.js"></script>
+<script src="js/game/collision.js"></script>
+<script src="js/game/spawn.js"></script>
+<script src="js/game/scenes.js"></script>
+<script src="js/game/input.js"></script>
+<script src="js/game.js"></script>
+<script src="js/main.js"></script>
+<script>
+/* 縦向き時のみ「横にしてください」表示（左パネル常時ジョイスティックは廃止・タッチで出現に変更済み） */
+(function () {
+    var portraitEl = document.getElementById('portrait-message');
+    function checkOrientation() {
+        if (!portraitEl) return;
+        var isPortrait = window.matchMedia('(orientation: portrait)').matches;
+        portraitEl.classList.toggle('is-visible', isPortrait);
+        portraitEl.setAttribute('aria-hidden', isPortrait ? 'false' : 'true');
+    }
+    window.addEventListener('orientationchange', checkOrientation);
+    window.addEventListener('resize', checkOrientation);
+    checkOrientation();
+})();
+</script>
+</body>
+</html>
