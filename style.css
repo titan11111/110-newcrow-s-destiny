@@ -39,19 +39,31 @@ body{
     padding-bottom:env(safe-area-inset-bottom,0);
 }
 
-/* 左右コントロールパネル（幅固定） */
+/* 左右コントロールパネル */
 .side-panel{
-    width:160px;
     flex-shrink:0;
-    background:rgba(20,25,30,0.6);
+    background:rgba(12,10,20,0.75);
     position:relative;
     z-index:10;
 }
-/* 左パネル常時ジョイスティックは廃止。タッチ時にキャンバス上に仮想ジョイスティックが出現する */
+/* 左パネル: ジョイスティック専用エリア（タッチデバイスのみ表示） */
 #left-panel{
-    display:none;
+    display:none; /* PC非表示: JSで .touch-device クラスを付与したとき表示 */
+    width:38%;
+    border-right:1px solid rgba(255,255,255,0.08);
+}
+/* タッチデバイス時のみ左パネル表示 */
+body.touch-device #left-panel{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+/* タッチデバイス時、右パネルを少し狭くし中央に余裕を持たせる */
+body.touch-device #right-panel{
+    width:130px;
 }
 #right-panel{
+    width:160px;
     border-left:2px solid rgba(255,255,255,0.1);
 }
 
@@ -104,25 +116,26 @@ canvas{
     justify-content:center;
 }
 #joystick-base{
-    width:120px;
-    height:120px;
-    background:rgba(60,50,40,0.3);
-    border:2px solid rgba(180,150,120,0.5);
+    /* HTMLジョイスティック: 160px×160px（半径80px = _htmlMaxRadius） */
+    width:160px;
+    height:160px;
+    background:rgba(40,30,20,0.35);
+    border:2px solid rgba(200,170,130,0.45);
     border-radius:50%;
-    position:relative;
-    margin-left:2mm;
+    position:absolute; /* _positionHTMLJoystick でleft/top制御 */
+    opacity:0;         /* 非タッチ時は非表示 */
+    transition:opacity 0.12s;
+    box-shadow:0 0 20px rgba(180,140,80,0.15);
 }
 #joystick-stick{
-    width:50px;
-    height:50px;
-    background:rgba(180,150,120,0.8);
+    /* ノブ: 70px×70px（半径35px = knobR） */
+    width:70px;
+    height:70px;
+    background:rgba(200,175,130,0.88);
     border-radius:50%;
     position:absolute;
-    top:50%;
-    left:50%;
-    transform:translate(-50%,-50%);
     pointer-events:none;
-    box-shadow:0 4px 8px rgba(0,0,0,0.5);
+    box-shadow:0 4px 12px rgba(0,0,0,0.55);
 }
 
 /* ======= 右パネル アクションボタン ======= */
@@ -185,6 +198,8 @@ canvas{
 }
 #action-buttons{display:flex;flex-direction:column;gap:0}
 #action-buttons button{min-width:76px;min-height:56px;font-size:15px;letter-spacing:1px}
+/* タッチデバイス(3分割レイアウト): ボタン幅を右パネル幅に合わせる */
+body.touch-device #action-buttons button{min-width:100%;width:100%;font-size:14px;letter-spacing:0;box-sizing:border-box;}
 #btn-pause{
     font-size:20px;letter-spacing:2px;min-width:56px;
     background:rgba(61,43,31,.85);border-color:#4a3528;
