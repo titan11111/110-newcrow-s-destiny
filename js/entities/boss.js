@@ -14,13 +14,271 @@ const clamp = global.CrowDestiny.clamp;
 /** 全ボス共通: 表示・当たり判定を60%に縮小（その代わり画面内を動き回る） */
 const BOSS_SIZE_SCALE = 0.6;
 
-/** ボス実装: BossBase.js で定義された Boss に update/draw メソッドを追加する */
-const Boss = global.CrowDestiny.Boss;
-const getMimicGuardianSvgImage = global.CrowDestiny.getMimicGuardianSvgImage;
-if (!Boss) return;
+/** 3面ボス・ガーディアン用SVG（周回するオブジェクトの描画）。1回だけ読み込み */
+let _mimicGuardianSvgImg = null;
+function getMimicGuardianSvgImage() {
+    if (_mimicGuardianSvgImg && _mimicGuardianSvgImg.complete && _mimicGuardianSvgImg.naturalWidth) return _mimicGuardianSvgImg;
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36">' +
+        '<circle cx="18" cy="18" r="15" fill="#5A2D8A" stroke="#C39BFF" stroke-width="2"/>' +
+        '<path d="M18 6 L24 18 L18 30 L12 18 Z" fill="#8B5CF6" stroke="#C39BFF" stroke-width="1.2"/>' +
+        '</svg>';
+    const img = new Image();
+    img.src = 'data:image/svg+xml,' + encodeURIComponent(svg);
+    _mimicGuardianSvgImg = img;
+    return img;
+}
 
-/** ボス1: 穢れの先兵・彷徨う巨骸 — 骨弾バースト / 骨の指弾 / テイルスウィング / 紫炎噴射 / 突進。攻撃派手・120%サイズ */
-Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
+class Boss {
+    constructor(sd, idx, form) {
+        this.x = CFG.W + 80; this.y = 200; this.tx = CFG.W * 0.68; this.ty = CFG.H / 2 - 30;
+        this.sd = sd; this.idx = idx; this.form = (idx === 6 && form != null) ? form : 0;
+        const hpScale = 2 * Math.pow(1.1, idx);
+        if (idx === 6) {
+            const baseHp = Math.floor((sd.bossHpBase || 660) / 3);
+            const formMul = this.form === 0 ? 1 : (this.form === 1 ? 2 : 3);
+            this.maxHp = Math.floor(baseHp * formMul * hpScale);
+            this.hp = this.maxHp;
+        } else {
+            const base = sd.bossHpBase || 220;
+            const boss2Mul = idx === 1 ? 1.1 : 1;
+            this.maxHp = Math.floor(base * hpScale * boss2Mul);
+            this.hp = this.maxHp;
+        }
+        this.active = true; this.arrived = false; this.timer = 0; this.phaseT = 0; this.phase = 0; this.maxPhases = 3 + Math.min(idx, 2);
+        this.name = sd.bossName; this.color = sd.bossColor; this.hitFlash = 0;
+        this.anim = new Anim({ IDLE: { frames: 4, loop: true, speed: 0.7 }, CHARGE: { frames: 4, loop: false, speed: 1.5 }, ATTACK: { frames: 4, loop: false, speed: 1.2 }, HIT: { frames: 3, loop: false, speed: 1 }, DEATH: { frames: 4, loop: false, speed: 0.6 } });
+        this.atkCD = 0; this.chargeTarget = null;
+        this.atkSpd = (sd.bossAtkSpd || 1.0) * (idx === 6 && this.form === 1 ? 2 : idx === 6 && this.form === 2 ? 3 : 1) * (idx === 1 ? 1.1 : 1);
+        this.laserWarn = 0; this.laserAngle = 0; this.clones = []; this.cloneCD = 0;
+        this._drawW = 80; this._drawH = 80;
+        this.introT = 0; this.introDone = false; this.INTRO_DUR = 60;
+        this.deathT = 0; this._pixBuf = null;
+        this.berserk = false;
+        this.lastStandTriggered = false; this.lastStandFreezeT = 0;
+        if (idx === 0) {
+            this.moveDir = 1; this._prevMoveDir = 1; this.telegraphT = 0; this.pendingAttack = null;
+            this.boss1TurnFlashTriggered = false;
+            this.boneBulletCD = 0; this.fingerBulletCD = 0; this.fingerBulletCount = 0;
+            this.tailSwingCD = 0; this.purpleBeamCD = 0; this.purpleBeamTelegraph = 0; this.purpleBeamActive = 0; this.purpleBeamAngle = 0;
+            this.scatterBurstCD = 0; this.grenadeLandings = []; this.rushT = 0; this.rushCD = 0;
+        }
+        if (idx === 1) {
+            this.boss2Phase = 'intro';
+            this.boss2BaseX = CFG.W / 2; this.boss2BaseY = CFG.H / 2 - 30;
+            this.x = CFG.W / 2; this.y = -120; this.tx = CFG.W / 2; this.ty = CFG.H / 2 - 30;
+            this.boss2MoveT = 0; this.boss2RotDir = 1;
+            this.boss2Frame = { col: 1, row: 1 };
+            this.boss2RotSeq = [{ col: 0, row: 0 }, { col: 1, row: 0 }, { col: 2, row: 0 }];
+            this.boss2RotSeqIdx = 0; this.boss2RotFrameTick = 0; this.boss2RotFrameRate = 10;
+            this.boss2AttackTimer = 0; this.boss2AttackCooldown = 90;
+            this.boss2RageTimer = 0; this.boss2RageCooldown = 60; this.boss2FireEffectT = 0;
+            this.boss2LaserCD = 0; this.boss2LaserWarnT = 0;
+        }
+        if (idx === 2) {
+            this.teleportCD = 0; this.afterimages = [];
+            this.noiseCD = 0; this.thunderCD = 0; this.thunderWarnT = 0; this.thunderActive = 0;
+            this.mirrorClones = []; this.mirrorCD = 0;
+            this.dataWaveCD = 0; this.paranoiaT = 0; this.portalResidue = null;
+            this.mimicZigzagCD = 0; this.mimicCores = null;
+            this.mimicChargePhase = null; this.mimicChargeT = 0; this.mimicSpinAngle = 0; this.mimicChargeVx = 0; this.mimicChargeVy = 0;
+        }
+        if (idx === 3) {
+            this.ironWingPhase = 'enter'; this.ironWingPhaseT = 0;
+            this.ironWingSeq = ['patrol', 'spread', 'patrol', 'dive_prep', 'patrol', 'spiral'];
+            this.ironWingSeqIdx = 0; this.ironWingRage = false;
+            this.ironWingFrameSequence = [0, 1, 4, 7, 8, 7, 4, 1];
+            this.ironWingFrameDurationsTicks = [11, 7, 7, 8, 12, 8, 7, 7];
+            this.ironWingSeqIndex = 0; this.ironWingFrameTimer = 0; this.ironWingFlipX = true;
+            this.ironWingWaveT = 0; this.ironWingShootTimer = 0; this.ironWingShootRate = 40;
+            this.ironWingDiveTargetX = 0; this.ironWingDiveTargetY = 0; this.ironWingDiveSpeed = 18;
+            this.ironWingSpiralAngle = 0; this.ironWingVx = 0; this.ironWingVy = 0;
+            this.ironWingTrail = []; this.ironWingBatSwarmCD = 0; this.deathRollT = 0; this.outOfControlT = 0;
+            this.ironWingDashCooldown = 0; this.ironWingDashT = 0; this.ironWingBreakdownTriggered = false;
+            this.ironWingLastGaspActive = false;
+        }
+        if (idx === 4) {
+            this.scarabotPhase = 'IDLE'; this.scarabotEnraged = false;
+            this.scarabotAnimFrames = [0, 1, 2, 1]; this.scarabotAnimIndex = 0; this.scarabotAnimTimer = 0; this.scarabotAnimSpeed = 6;
+            this.scarabotFlipX = true; this.scarabotAttackCD = 0; this.scarabotAnimState = 'walk';
+            this.scarabotBaseTx = this.tx; this.scarabotBaseTy = this.ty;
+            this.domeShieldT = 0; this.domeShieldCD = 0;
+            this.scarabotDashT = 0; this.scarabotDashVx = 0; this.scarabotDashVy = 0;
+            this.energyTrail = [];
+        }
+        if (idx === 5) {
+            this.snowQueenPhase = 1; this.snowQueenEnraged = false; this.snowQueenSpriteState = 'IDLE';
+            this.snowQueenFrameIndex = 0; this.snowQueenFrameTimer = 0;
+            this.snowQueenGuard = false; this.snowQueenGuardT = 0; this.snowQueenGuardCD = 0;
+            this.snowQueenActionT = 0; this.snowQueenActionInterval = 90;
+            this.snowQueenMoveTargetX = 0; this.snowQueenMoveTargetY = 0; this.snowQueenMoveT = 0; this.snowQueenMoveInterval = 180;
+            this.iceTrail = []; this.angularPhase = 0;
+            this.snowQueenPrismBurstActive = false; this.snowQueenPrismBurstT = 0;
+            this.snowQueenDiamondDustActive = false; this.snowQueenDiamondDustT = 0; this.snowQueenDiamondDustCount = 0;
+        }
+        if (idx === 6) {
+            this.voidTeleportCD = 0; this.voidAfterimages = []; this.VOID_AFTERIMAGE_LIFE = 180;
+        }
+    }
+    get hitRadius() {
+        if (!this.introDone) return 0;
+        let r = Math.max(this._drawW, this._drawH) / 2 * 0.95;
+        if (this.idx === 3 && this.deathRollT > 0) r *= 1.3;
+        return r;
+    }
+    get playerHitRadius() {
+        if (!this.introDone) return 0;
+        return Math.max(this._drawW, this._drawH) / 2 * 0.95;
+    }
+    _playBossSE(opts, kind) {
+        if (!opts || !opts.sound) return;
+        if (kind === 'shot') {
+            if ((this._bossShotCD || 0) > 0) return;
+            this._bossShotCD = 12;
+            opts.sound.playBossShot();
+        } else if (kind === 'big') { opts.sound.playBossBig(); }
+        else if (kind === 'charge') { opts.sound.playBossCharge(); }
+    }
+    update(px, py, bullets, enemies, fx, sd) {
+        if (this.anim.state === 'DEATH') { this.deathT++; this.anim.update(); if (this.anim.done) this.active = false; return; }
+        this.berserk = this.hp <= this.maxHp * 0.3;
+        this.timer++; this.anim.update();
+        if (!this.arrived) {
+            if (this.idx === 1) {
+                this.x = this.tx; this.y = Math.min(this.ty, this.y + 3.5);
+                if (this.y >= this.ty) { this.y = this.ty; this.arrived = true; }
+            } else {
+                this.x += (this.tx - this.x) * 0.03; this.y += (this.ty - this.y) * 0.03;
+                if (Math.abs(this.x - this.tx) < 5) this.arrived = true;
+            }
+            return;
+        }
+        if (!this.introDone) { this.introT++; if (this.introT >= this.INTRO_DUR) this.introDone = true; return; }
+        if (this.lastStandFreezeT > 0) { this.lastStandFreezeT--; return; }
+        this._bossShotCD = Math.max(0, (this._bossShotCD || 0) - 1);
+        const opts = arguments[6] || {};
+        if (this.idx === 0) { this.updateBoss1(px, py, bullets, fx, opts); if (this.hitFlash > 0) this.hitFlash--; return; }
+        if (this.idx === 1) { this.updateBoss2(px, py, bullets, enemies, fx, sd, opts); if (this.hitFlash > 0) this.hitFlash--; return; }
+        if (this.idx === 2) { this.updateBossMimic(px, py, bullets, fx, opts); if (this.hitFlash > 0) this.hitFlash--; return; }
+        if (this.idx === 3) { this.updateBossIronWing(px, py, bullets, fx, opts); if (this.hitFlash > 0) this.hitFlash--; return; }
+        if (this.idx === 4) { this.updateBossGuardian(px, py, bullets, fx, opts); if (this.hitFlash > 0) this.hitFlash--; return; }
+        if (this.idx === 5) { this.updateBossBluecore(px, py, bullets, fx, opts); if (this.hitFlash > 0) this.hitFlash--; return; }
+        if (this.idx === 6) { this.updateBossVoid(px, py, bullets, fx, opts); if (this.hitFlash > 0) this.hitFlash--; return; }
+        const formStatMul = (this.idx === 6 && this.form === 1) ? 2 : (this.idx === 6 && this.form === 2) ? 3 : 1;
+        this.phaseT++;
+        const phaseDurBase = Math.max(160, 280 - this.idx * 18);
+        let phaseDur = this.berserk ? Math.floor(phaseDurBase * 0.6) : phaseDurBase;
+        if (this.idx === 6 && formStatMul > 1) phaseDur = Math.max(40, Math.floor(phaseDur / formStatMul));
+        if (this.phaseT > phaseDur) { this.phase = (this.phase + 1) % this.maxPhases; this.phaseT = 0; this.chargeTarget = null; this.laserWarn = 0; }
+        const ampX = 45 + this.idx * 14, ampY = 22 + this.idx * 10;
+        const moveMul = this.berserk ? 1.55 : 1;
+        this.x = this.tx + (Math.sin(this.timer * 0.015) * ampX + Math.cos(this.timer * 0.023) * (ampX * 0.45)) * moveMul;
+        this.y = this.ty + (Math.sin(this.timer * 0.02) * ampY + Math.sin(this.timer * 0.031) * (ampY * 0.55)) * moveMul;
+        const bulletMul = (1 + this.idx * 0.15) * (this.berserk ? 1.35 : 1) * formStatMul;
+        const bulletColor = this.berserk ? "#ff4466" : this.color;
+        if (this.phase === 0) {
+            this.atkCD--; const intv = Math.max(6, Math.round((22 - this.idx * 2) / this.atkSpd));
+            if (this.atkCD <= 0) {
+                this.atkCD = intv; this.anim.set('ATTACK');
+                const n = 6 + this.idx * 2, baseAngle = this.timer * 0.025;
+                for (let i = 0; i < n; i++) {
+                    const a = (Math.PI * 2 / n) * i + baseAngle, spd = (2.6 + this.idx * 0.25) * bulletMul;
+                    bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, color: bulletColor, r: 5 });
+                }
+                if (this.idx >= 3) for (let i = 0; i < n; i++) {
+                    const a = (Math.PI * 2 / n) * i + baseAngle + 0.15, spd = (2.2 + this.idx * 0.2) * bulletMul;
+                    bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, color: bulletColor, r: 4 });
+                }
+            }
+        } else if (this.phase === 1) {
+            if (!this.chargeTarget) this.chargeTarget = { x: px, y: py };
+            const dx = this.chargeTarget.x - this.x, dy = this.chargeTarget.y - this.y, d = Math.hypot(dx, dy) || 1, cSpd = 7 + this.idx * 0.6;
+            if (d > 30) { this.x += dx / d * cSpd; this.y += dy / d * cSpd; this.anim.set('CHARGE'); }
+            else {
+                this.chargeTarget = null; fx.burst(this.x, this.y, this.color, 18 + this.idx * 2, 5);
+                const burst = 10 + this.idx * 3, spd = (2.6 + this.idx * 0.2) * bulletMul;
+                for (let i = 0; i < burst; i++) { const a = (Math.PI * 2 / burst) * i; bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, color: bulletColor, r: 4 }); }
+                if (this.idx >= 4) for (let i = 0; i < burst; i++) { const a = (Math.PI * 2 / burst) * i + 0.2; bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * spd * 0.85, vy: Math.sin(a) * spd * 0.85, active: true, color: bulletColor, r: 3 }); }
+            }
+        } else if (this.phase === 2) {
+            if (this.phaseT % Math.max(50, 110 - this.idx * 12) === 0) { enemies.push(new Enemy(CFG.W + 30, rr(60, CFG.H - 80), sd, false, this.idx)); if (this.idx >= 5) enemies.push(new Enemy(CFG.W + 40, rr(80, CFG.H - 100), sd, false, this.idx)); }
+            this.atkCD--; const intv2 = Math.max(12, Math.round((45 - this.idx * 4) / this.atkSpd));
+            if (this.atkCD <= 0) {
+                this.atkCD = intv2; const dx = px - this.x, dy = py - this.y, d = Math.hypot(dx, dy) || 1, spd = (3.2 + this.idx * 0.35) * bulletMul;
+                const rays = 1 + Math.min(this.idx, 3);
+                for (let r = 0; r < rays; r++) {
+                    const off = (r - (rays - 1) / 2) * 0.12; const ax = Math.atan2(dy, dx) + off;
+                    bullets.push({ x: this.x, y: this.y, vx: Math.cos(ax) * spd, vy: Math.sin(ax) * spd, active: true, color: bulletColor, r: 5 });
+                }
+            }
+        } else if (this.phase === 3) {
+            this.atkCD--; const spiralIntv = Math.max(2, 5 - Math.floor(this.idx / 2));
+            if (this.atkCD <= 0) {
+                this.atkCD = spiralIntv; const baseSpd = (2.2 + this.idx * 0.18) * bulletMul;
+                const spirals = this.idx >= 2 ? 2 : 1;
+                for (let s = 0; s < spirals; s++) {
+                    const a = this.timer * (0.08 + s * 0.05) + s * Math.PI;
+                    bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * baseSpd, vy: Math.sin(a) * baseSpd, active: true, color: bulletColor, r: 4 });
+                    if (this.idx >= 5) bullets.push({ x: this.x, y: this.y, vx: Math.cos(a + 0.4) * baseSpd * 0.9, vy: Math.sin(a + 0.4) * baseSpd * 0.9, active: true, color: bulletColor, r: 3 });
+                }
+            }
+        } else if (this.phase === 4) {
+            if (this.laserWarn < 55) { this.laserWarn++; this.laserAngle = Math.atan2(py - this.y, px - this.x); }
+            else if (this.laserWarn === 55) {
+                this.laserWarn++; const la = this.laserAngle, spd = (5 + this.idx * 0.4) * bulletMul;
+                const beamCount = 7 + this.idx * 2, spread = 0.055 + this.idx * 0.008;
+                for (let i = -Math.floor(beamCount / 2); i <= Math.floor(beamCount / 2); i++) {
+                    const a = la + i * spread; bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, color: "#ff2200", r: 6 });
+                }
+                fx.burst(this.x, this.y, "#ff2200", 24 + this.idx * 2, 6);
+                this.laserWarn = 0;
+            }
+        }
+        if (this.anim.state !== 'IDLE' && this.anim.done) this.anim.set('IDLE');
+        if (this.hitFlash > 0) this.hitFlash--;
+    }
+    takeDamage(amt, fx) {
+        let actual = amt;
+        if (this.idx === 5 && this.snowQueenGuard) actual = Math.floor(amt * (1 - 0.85));
+        const wasAbove10 = this.hp > this.maxHp * 0.1;
+        this.hp -= actual;
+        this.hitFlash = 4;
+        if (this.anim.state !== 'DEATH') this.anim.set('HIT');
+        if (this.hp <= 0) {
+            if (this.idx === 3 && !this.ironWingLastGaspActive) {
+                this.ironWingLastGaspActive = true;
+                this.hp = 1;
+                this.ironWingPhase = 'last_gasp';
+                this.ironWingPhaseT = 0;
+                return;
+            }
+            this.anim.set('DEATH'); this.deathT = 0; fx.big(this.x, this.y, this.color); return;
+        }
+        if (this.idx === 3 && this.hp <= this.maxHp * 0.2 && actual > 80 && !this.ironWingBreakdownTriggered) {
+            this.ironWingBreakdownTriggered = true;
+            this.ironWingPhase = 'breakdown';
+            this.ironWingPhaseT = 0;
+        }
+        if (wasAbove10 && this.hp <= this.maxHp * 0.1 && !this.lastStandTriggered) {
+            this.lastStandTriggered = true;
+            this.lastStandFreezeT = 90;
+        }
+        if (this.idx === 1 && fx.addArenaDebris) {
+            for (let i = 0; i < 3; i++)
+                fx.addArenaDebris(this.x + rr(-20, 20), this.y, (Math.random() - 0.5) * 4, -1 - Math.random() * 2, 80, '#8B4513', 12, 5);
+        }
+        if (this.idx === 4) {
+            this.armorPeelLevel = Math.min(3, (this.armorPeelLevel || 0) + 0.25);
+            if (fx.addArenaDebris) {
+                const debrisCount = Math.max(1, Math.floor(actual / 10));
+                for (let i = 0; i < debrisCount; i++) {
+                    fx.addArenaDebris(this.x + rr(-30, 30), this.y + rr(-10, 10), (Math.random() - 0.5) * 3, -1 - Math.random() * 2, 70, '#4A9B8E', 10, 4);
+                }
+            }
+        }
+    }
+
+    /** ボス1: 穢れの先兵・彷徨う巨骸 — 骨弾バースト / 骨の指弾 / テイルスウィング / 紫炎噴射 / 突進。攻撃派手・120%サイズ */
+    updateBoss1(px, py, bullets, fx, opts) {
         const W = CFG.W; const H = CFG.H;
         const purple = '#9B59B6'; const purpleGlow = '#D7BDE2'; const flame = '#F39C12';
         const lrSpeed = (this.berserk ? 1.4 : 1) * (2.2 / 60 * 10);
@@ -207,10 +465,10 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
         }
 
         if (this.anim.state !== 'IDLE' && this.anim.done) this.anim.set('IDLE');
-    };
+    }
 
     /** ボス2: 三角ロボ — 3フェーズ(降下→normal→enraged)。回転アニメ・3way/5way/追尾/8方向スプレッド */
-    Boss.prototype.updateBoss2 = function(px, py, bullets, enemies, fx, sd, opts) {
+    updateBoss2(px, py, bullets, enemies, fx, sd, opts) {
         const W = CFG.W; const H = CFG.H;
         const green = '#00ff44'; const greenGlow = '#66ff88'; const rage = '#ff4400'; const orange = '#ff8800';
 
@@ -355,10 +613,10 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
         }
 
         if (this.anim.state !== 'IDLE' && this.anim.done) this.anim.set('IDLE');
-    };
+    }
 
     /** ボス3面: 擬態する知性・ミミック — テレポート・ノイズ・サンダー・ミラー・データ侵食波・紫赤青ジグザグビーム・4旋回コア・追い詰め体当たり→後退 */
-    Boss.prototype.updateBossMimic = function(px, py, bullets, fx, opts) {
+    updateBossMimic(px, py, bullets, fx, opts) {
         const W = CFG.W; const H = CFG.H;
         const purple = '#7B00FF'; const purpleLight = '#C39BFF';
         const red = '#FF4444'; const blue = '#4488FF';
@@ -638,17 +896,19 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
                 bullets.push({ x: c.x, y: c.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, color: purple, r: 4 });
             }
         });
-    };
+    }
 
-    /** ボス4面: 鉄の翼 Iron Wing — 3×2スプライト / PATROL→SPREAD→DIVE→SPIRAL→RECOVER。RAGEで50%以下高速化 */
-    Boss.prototype.updateBossIronWing = function(px, py, bullets, fx, opts) {
+    /** ボス4面: 鉄の翼 Iron Wing — PATROL(突進付き) / SPREAD / DIVE_PREP→DIVE→BOUNCE / SPIRAL / BREAKDOWN→TAUNT→RIPOSTE / LAST_GASP */
+    updateBossIronWing(px, py, bullets, fx, opts) {
         const W = CFG.W; const H = CFG.H;
         const red = '#dc1e1e'; const darkRed = '#8c0000'; const orange = '#ff8c00'; const yellow = '#ffff00';
 
         if (this.hp < this.maxHp * 0.5 && !this.ironWingRage) {
             this.ironWingRage = true;
-            this.ironWingShootRate = 25;
-            this.ironWingDiveSpeed = 24;
+            this.ironWingShootRate = 20;
+            this.ironWingDiveSpeed = 34;
+        } else if (!this.ironWingRage) {
+            this.ironWingDiveSpeed = 26;
         }
         this.ironWingPhaseT++;
         this.ironWingWaveT += 0.03;
@@ -662,6 +922,36 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
         const phase = this.ironWingPhase;
         const rage = this.ironWingRage;
 
+        // ----- LAST_GASP: 死に際の特攻（HP0時に発動）
+        if (phase === 'last_gasp') {
+            if (this.ironWingPhaseT <= 60) {
+                this.ironWingVx *= 0.9; this.ironWingVy *= 0.9;
+                this.x += this.ironWingVx; this.y += this.ironWingVy;
+                if (this.ironWingPhaseT % 4 === 0) fx.burst(this.x + (Math.random() - 0.5) * 40, this.y, yellow, 8, 2);
+            } else if (this.ironWingPhaseT === 61) {
+                const ang = Math.atan2(py - this.y, px - this.x);
+                this.ironWingVx = Math.cos(ang) * 32;
+                this.ironWingVy = Math.sin(ang) * 32;
+                this._playBossSE(opts, 'big');
+            } else {
+                this.x += this.ironWingVx; this.y += this.ironWingVy;
+                if (this.ironWingPhaseT % 6 === 0) {
+                    for (let i = 0; i < 5; i++) {
+                        const a = Math.random() * Math.PI * 2;
+                        const spd = 4 + Math.random() * 4;
+                        bullets.push({ x: this.x + (Math.random() - 0.5) * 40, y: this.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, color: Math.random() > 0.5 ? red : orange, r: 5 });
+                    }
+                }
+            }
+            if (this.ironWingPhaseT >= 180 || this.x < -80 || this.x > W + 80 || this.y < -80 || this.y > H + 80) {
+                this.hp = 0;
+                this.anim.set('DEATH');
+                this.deathT = 0;
+                fx.big(this.x, this.y, this.color);
+            }
+            return;
+        }
+
         if (phase === 'enter') {
             const targetX = W * 0.75; const targetY = H * 0.25;
             this.x += (targetX - this.x) * 0.02;
@@ -671,27 +961,60 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
                 this.ironWingPhaseT = 0;
             }
         } else if (phase === 'patrol') {
-            const speedX = rage ? 1.8 : 1.2; const speedY = rage ? 1.4 : 0.9;
-            this.ironWingVx = Math.sin(this.ironWingWaveT * 0.4) * speedX;
-            this.ironWingVy = Math.sin(this.ironWingWaveT * 0.7) * speedY;
-            if (this.berserk) {
-                this.ironWingVx += Math.sin(this.timer * 0.13) * 1.5 + Math.cos(this.timer * 0.11) * 1;
-                this.ironWingVy += Math.cos(this.timer * 0.09) * 1.2 + Math.sin(this.timer * 0.07) * 0.8;
-            }
-            this.ironWingFlipX = this.ironWingVx < 0;
-            this.x += this.ironWingVx; this.y += this.ironWingVy;
-            this.ironWingShootTimer++;
-            if (this.ironWingShootTimer >= this.ironWingShootRate) {
-                this.ironWingShootTimer = 0;
+            this.ironWingDashCooldown = Math.max(0, (this.ironWingDashCooldown || 0) - 1);
+            const dashCD = rage ? 60 : 80;
+            const dashSpeed = rage ? 18 : 15;
+            if (this.ironWingDashCooldown <= 0 && this.ironWingPhaseT > 15) {
+                this.ironWingDashCooldown = dashCD;
+                this.ironWingDashT = 5;
+                const ang = Math.atan2(py - this.y, px - this.x);
+                this.ironWingVx = Math.cos(ang) * dashSpeed;
+                this.ironWingVy = Math.sin(ang) * dashSpeed;
                 this._playBossSE(opts, 'shot');
-                const baseAngle = Math.PI; const spd = rage ? 6 : 4.5;
-                for (const da of [-0.2, 0, 0.2]) {
-                    const a = baseAngle + da;
-                    bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, color: darkRed, r: 5 });
+            } else if (this.ironWingDashT > 0) {
+                this.ironWingDashT--;
+                this.ironWingFlipX = this.ironWingVx < 0;
+                this.x += this.ironWingVx; this.y += this.ironWingVy;
+            } else {
+                const speedX = rage ? 1.8 : 1.2; const speedY = rage ? 1.4 : 0.9;
+                this.ironWingVx = Math.sin(this.ironWingWaveT * 0.4) * speedX;
+                this.ironWingVy = Math.sin(this.ironWingWaveT * 0.7) * speedY;
+                if (this.berserk) {
+                    this.ironWingVx += Math.sin(this.timer * 0.13) * 1.5 + Math.cos(this.timer * 0.11) * 1;
+                    this.ironWingVy += Math.cos(this.timer * 0.09) * 1.2 + Math.sin(this.timer * 0.07) * 0.8;
+                }
+                this.ironWingFlipX = this.ironWingVx < 0;
+                this.x += this.ironWingVx; this.y += this.ironWingVy;
+            }
+            if (this.ironWingDashT <= 0) {
+                this.ironWingShootTimer++;
+                if (this.ironWingShootTimer >= this.ironWingShootRate) {
+                    this.ironWingShootTimer = 0;
+                    this._playBossSE(opts, 'shot');
+                    const baseAngle = Math.atan2(py - this.y, px - this.x);
+                    const spd = rage ? 7.2 : 5.2;
+                    for (const da of [-0.2, 0, 0.2]) {
+                        const a = baseAngle + da;
+                        bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, color: darkRed, r: 5 });
+                    }
                 }
             }
             const limit = rage ? 60 : 90;
             if (this.ironWingPhaseT >= limit) this._ironWingNextPhase();
+        } else if (phase === 'dive_prep') {
+            const targetX = px; const targetY = H * 0.15;
+            this.ironWingVx += (targetX - this.x) * 0.12 - this.ironWingVx * 0.15;
+            this.ironWingVy += (targetY - this.y) * 0.12 - this.ironWingVy * 0.15;
+            this.x += this.ironWingVx; this.y += this.ironWingVy;
+            this.ironWingFlipX = px < this.x;
+            if (this.ironWingPhaseT % 8 === 0) fx.burst(this.x, this.y, orange, 10, 2);
+            if (this.ironWingPhaseT >= 30) {
+                this.ironWingDiveTargetX = px;
+                this.ironWingDiveTargetY = H * 0.75;
+                this.ironWingPhase = 'dive';
+                this.ironWingPhaseT = 0;
+                this._playBossSE(opts, 'big');
+            }
         } else if (phase === 'dive') {
             const dx = this.ironWingDiveTargetX - this.x; const dy = this.ironWingDiveTargetY - this.y;
             const dist = Math.hypot(dx, dy);
@@ -706,10 +1029,28 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
                     const a = (Math.PI * 2 / 8) * i;
                     bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * 6, vy: Math.sin(a) * 6, active: true, color: yellow, r: 5 });
                 }
+                for (let i = 0; i < 12; i++) {
+                    const a = (Math.PI * 2 / 12) * i;
+                    bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * 2, vy: Math.sin(a) * 2, active: true, color: orange, r: 5, accel: 1.08, accelMax: 6 });
+                }
                 fx.burst(this.x, this.y, orange, 20, 5);
+                if (fx.addFloorCrack) fx.addFloorCrack(this.x, H - 20, 25);
                 this.ironWingVx = 0; this.ironWingVy = 0;
-                this.ironWingPhase = 'recover'; this.ironWingPhaseT = 0;
+                this.ironWingPhase = 'bounce';
+                this.ironWingPhaseT = 0;
             }
+        } else if (phase === 'bounce') {
+            if (this.ironWingPhaseT === 1) {
+                const targetX = W * 0.7; const targetY = H * 0.2;
+                const ang = Math.atan2(targetY - this.y, targetX - this.x);
+                this.ironWingVx = Math.cos(ang) * 22;
+                this.ironWingVy = Math.sin(ang) * 22;
+                this._playBossSE(opts, 'shot');
+            }
+            this.ironWingVx *= 0.92; this.ironWingVy *= 0.92;
+            this.x += this.ironWingVx; this.y += this.ironWingVy;
+            this.ironWingFlipX = this.ironWingVx < 0;
+            if (this.ironWingPhaseT >= 35) this._ironWingNextPhase();
         } else if (phase === 'spread') {
             this.ironWingVx *= 0.85; this.ironWingVy *= 0.85;
             this.x += this.ironWingVx; this.y += this.ironWingVy;
@@ -739,30 +1080,64 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
                 bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * 5, vy: Math.sin(a) * 5, active: true, color: orange, r: 6 });
             }
             if (this.ironWingPhaseT >= (rage ? 120 : 150)) this._ironWingNextPhase();
-        } else if (phase === 'recover') {
-            const targetX = W * 0.7; const targetY = H * 0.2;
-            this.ironWingVx += ((targetX - this.x) * 0.06 - this.ironWingVx) * 0.2;
-            this.ironWingVy += ((targetY - this.y) * 0.06 - this.ironWingVy) * 0.2;
+        } else if (phase === 'breakdown') {
+            this.ironWingVx *= 0.6; this.ironWingVy *= 0.6;
+            this.x += this.ironWingVx + (Math.random() - 0.5) * 12;
+            this.y += this.ironWingVy + (Math.random() - 0.5) * 12;
+            this.x = clamp(this.x, 80, W - 80);
+            this.y = clamp(this.y, 50, H - 80);
+            if (this.ironWingPhaseT % 3 === 0) fx.burst(this.x + (Math.random() - 0.5) * 60, this.y + (Math.random() - 0.5) * 40, yellow, 6, 2);
+            if (this.ironWingPhaseT >= 30) {
+                this.ironWingPhase = 'taunt';
+                this.ironWingPhaseT = 0;
+                this.x = clamp(this.x, 100, W - 100);
+                this.y = clamp(this.y, 80, H / 2);
+            }
+        } else if (phase === 'taunt') {
+            this.ironWingVx = 0; this.ironWingVy = 0;
+            this.ironWingFlipX = px < this.x;
+            if (this.ironWingPhaseT === 15) this._playBossSE(opts, 'big');
+            if (this.ironWingPhaseT >= 30) {
+                this.ironWingPhase = 'riposte';
+                this.ironWingPhaseT = 0;
+            }
+        } else if (phase === 'riposte') {
+            if (this.ironWingPhaseT === 1) {
+                this._playBossSE(opts, 'big');
+                for (let i = 0; i < 24; i++) {
+                    const a = (Math.PI * 2 / 24) * i;
+                    bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * 6, vy: Math.sin(a) * 6, active: true, color: red, r: 6 });
+                }
+            }
+            if (this.ironWingPhaseT === 18) {
+                const ang = Math.atan2(py - this.y, px - this.x);
+                this.ironWingVx = Math.cos(ang) * 28;
+                this.ironWingVy = Math.sin(ang) * 28;
+                this.ironWingFlipX = this.ironWingVx < 0;
+            }
             this.x += this.ironWingVx; this.y += this.ironWingVy;
-            if (this.ironWingPhaseT >= 50) this._ironWingNextPhase();
+            this.ironWingVx *= 0.98; this.ironWingVy *= 0.98;
+            if (this.ironWingPhaseT >= 90) this._ironWingNextPhase();
         }
 
-        // 翼残像（オレンジ〜赤グラデーション）— InfernalBatDemon 的
-        if (!this.ironWingTrail) this.ironWingTrail = [];
-        const trailInterval = rage ? 2 : 4;
-        if (this.ironWingPhaseT % trailInterval === 0) {
-            this.ironWingTrail.push({ x: this.x, y: this.y, t: 28 });
-            if (this.ironWingTrail.length > 20) this.ironWingTrail.shift();
+        // 翼残像（last_gasp・breakdown以外）
+        if (phase !== 'last_gasp' && phase !== 'breakdown') {
+            if (!this.ironWingTrail) this.ironWingTrail = [];
+            const trailInterval = rage ? 2 : 4;
+            if (this.ironWingPhaseT % trailInterval === 0) {
+                this.ironWingTrail.push({ x: this.x, y: this.y, t: 28 });
+                if (this.ironWingTrail.length > 20) this.ironWingTrail.shift();
+            }
+            this.ironWingTrail.forEach(tr => { tr.t--; });
+            this.ironWingTrail = this.ironWingTrail.filter(tr => tr.t > 0);
         }
-        this.ironWingTrail.forEach(tr => { tr.t--; });
-        this.ironWingTrail = this.ironWingTrail.filter(tr => tr.t > 0);
 
-        // バットスウォーム：半透明コウモリ群のような放射弾（発狂時は本数増）
+        // バットスウォーム（patrol / spread のみ、breakdown/taunt/riposte/last_gasp 以外）
         this.ironWingBatSwarmCD = Math.max(0, (this.ironWingBatSwarmCD || 0) - 1);
         if (this.ironWingBatSwarmCD <= 0 && (phase === 'patrol' || phase === 'spread') && this.ironWingPhaseT > 20) {
-            this.ironWingBatSwarmCD = rage ? 160 : 220;
+            this.ironWingBatSwarmCD = rage ? 120 : 180;
             this._playBossSE(opts, 'shot');
-            const swarmCount = rage ? 12 : 8;
+            const swarmCount = rage ? 14 : 8;
             const colors = [orange, '#FF4500', darkRed];
             for (let i = 0; i < swarmCount; i++) {
                 const a = (Math.PI * 2 / swarmCount) * i + Math.random() * 0.2;
@@ -772,23 +1147,36 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
             fx.burst(this.x, this.y, orange, 14, 4);
         }
 
-        this.x = clamp(this.x, 60, W - 60);
-        this.y = clamp(this.y, 40, H - 40);
-    };
-    Boss.prototype._ironWingNextPhase = function() {
+        if (phase !== 'last_gasp' && phase !== 'breakdown') {
+            if (phase === 'riposte') {
+                this.x = clamp(this.x, 100, W - 100);
+                this.y = clamp(this.y, 60, H - 60);
+            } else {
+                this.x = clamp(this.x, 60, W - 60);
+                this.y = clamp(this.y, 40, H - 40);
+            }
+        }
+    }
+    _ironWingNextPhase() {
+        if (this.ironWingPhase === 'bounce') {
+            this.ironWingPhase = 'patrol';
+            this.ironWingSeqIdx = 4;
+            this.ironWingPhaseT = 0;
+            return;
+        }
         this.ironWingSeqIdx = (this.ironWingSeqIdx + 1) % this.ironWingSeq.length;
         const next = this.ironWingSeq[this.ironWingSeqIdx];
         this.ironWingPhase = next;
         this.ironWingPhaseT = 0;
-        if (next === 'dive') {
-            this.ironWingDiveTargetX = rr(200, CFG.W - 200);
-            this.ironWingDiveTargetY = rr(CFG.H * 0.5, CFG.H * 0.8);
+        if (next === 'dive_prep') {
+            this.ironWingDiveTargetX = 0;
+            this.ironWingDiveTargetY = 0;
         }
         if (next === 'spiral') this.ironWingSpiralAngle = 0;
-    };
+    }
 
     /** ボス5面: 鋼甲蟲 SCARABOT — 3×2スプライト / IDLE→PATROL(3way散弾)→ENRAGED(50%以下・5way+レーザー)＋虫らしい縄張り移動・ドームシールド・狂乱ダッシュ */
-    Boss.prototype.updateBossGuardian = function(px, py, bullets, fx, opts) {
+    updateBossGuardian(px, py, bullets, fx, opts) {
         const W = CFG.W; const H = CFG.H;
         const cyan = '#00ffff';
 
@@ -936,8 +1324,8 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
             this.energyTrail.forEach(tr => { tr.t--; });
             this.energyTrail = this.energyTrail.filter(tr => tr.t > 0);
         }
-    };
-    Boss.prototype._scarabotFireSpread = function(px, py, bullets, count, spreadDeg) {
+    }
+    _scarabotFireSpread(px, py, bullets, count, spreadDeg) {
         const baseAngle = Math.atan2(py - this.y, px - this.x);
         const step = (spreadDeg * Math.PI / 180) / (count - 1 || 1);
         const offset = ((count - 1) / 2) * step;
@@ -946,18 +1334,18 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
             const spd = 5.8;
             bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, color: '#00ffff', r: 5 });
         }
-    };
-    Boss.prototype._scarabotFireLaser = function(px, py, bullets, fx) {
+    }
+    _scarabotFireLaser(px, py, bullets, fx) {
         const dx = px - this.x; const dy = py - this.y; const d = Math.hypot(dx, dy) || 1;
         const n = 12; const spd = 8;
         for (let i = -n / 2; i <= n / 2; i++) {
             const a = Math.atan2(dy, dx) + i * 0.03;
             bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, color: '#00eeff', r: 4 });
         }
-    };
+    }
 
-    /** ボス6面: 雪の女王 Snow Queen — 3×2スプライト / Phase1(100〜40%)→Phase2 Enrage。ガード85%軽減・ice_shot/spread/blizzard/shield/burst */
-    Boss.prototype.updateBossBluecore = function(px, py, bullets, fx, opts) {
+    /** ボス6面: 雪の女王 Snow Queen — 猛攻撃化。Phase1(90f間隔) / Phase2(60f・プリズム/分裂/ダイヤモンドダスト)。ガード85%軽減・CD400 */
+    updateBossBluecore(px, py, bullets, fx, opts) {
         const W = CFG.W; const H = CFG.H;
         const ice = '#64C8FF'; const iceLight = '#C8EBFF';
 
@@ -966,7 +1354,7 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
             this.snowQueenPhase = 2;
             this.snowQueenSpriteState = 'ENRAGE';
             this.snowQueenFrameIndex = 0;
-            this.snowQueenActionInterval = Math.max(48, this.snowQueenActionInterval * 0.6);
+            this.snowQueenActionInterval = 60;
             this._playBossSE(opts, 'big');
         }
 
@@ -977,7 +1365,7 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
             this.snowQueenGuardT = Math.max(0, (this.snowQueenGuardT || 0) - 1);
             if (this.snowQueenGuardT <= 0) {
                 this.snowQueenGuard = false;
-                this.snowQueenGuardCD = 480;
+                this.snowQueenGuardCD = 400;
                 this.snowQueenSpriteState = 'IDLE';
             }
         }
@@ -990,7 +1378,7 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
         }
         const mdx = this.snowQueenMoveTargetX - this.x; const mdy = this.snowQueenMoveTargetY - this.y;
         const mdist = Math.hypot(mdx, mdy) || 1;
-        const moveSpd = (this.snowQueenPhase === 2 ? 1.4 : 1) * 1.5 * (1 / 60);
+        const moveSpd = (this.snowQueenPhase === 2 ? 1.6 : 1) * 1.5 * (1 / 60);
         this.x += (mdx / mdist) * moveSpd * 60;
         this.y += (mdy / mdist) * moveSpd * 60;
         this.x = clamp(this.x, 100, W - 100);
@@ -1006,27 +1394,72 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
 
         if (this.snowQueenSpriteState === 'ENRAGE' && this.snowQueenPhase === 2) return;
 
+        if (this.snowQueenPrismBurstActive) {
+            const T = this.snowQueenPrismBurstT;
+            if (T === 0 || T === 8 || T === 16) {
+                const wave = Math.floor(T / 8);
+                const angleOffset = (Math.PI / 12) * wave;
+                const hueBase = wave * 120;
+                const spd = 5.5 + wave * 0.8;
+                for (let i = 0; i < 24; i++) {
+                    const a = (Math.PI * 2 / 24) * i + angleOffset;
+                    const hue = (hueBase + i * 15) % 360;
+                    bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, color: `hsl(${hue}, 100%, 70%)`, r: 6, hue: hue });
+                }
+                if (T === 0) this._playBossSE(opts, 'big');
+            }
+            this.snowQueenPrismBurstT++;
+            if (this.snowQueenPrismBurstT >= 24) {
+                this.snowQueenPrismBurstActive = false;
+                this.snowQueenActionT = 0;
+            }
+            this.snowQueenSpriteState = 'BURST';
+            this.snowQueenStateEndT = 100;
+            return;
+        }
+        if (this.snowQueenDiamondDustActive) {
+            for (let s = 0; s < 2; s++) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 50 + Math.random() * 100;
+                const startX = this.x + Math.cos(angle) * dist;
+                const startY = this.y + Math.sin(angle) * dist;
+                const spiralA = angle + this.snowQueenDiamondDustT * 0.05;
+                const spd = 3 + Math.random() * 2;
+                const hue = (this.snowQueenDiamondDustCount * 4) % 360;
+                bullets.push({ x: startX, y: startY, vx: Math.cos(spiralA) * spd, vy: Math.sin(spiralA) * spd, active: true, color: `hsl(${hue}, 100%, 70%)`, r: 3, hue: hue });
+            }
+            this.snowQueenDiamondDustCount += 2;
+            this.snowQueenDiamondDustT++;
+            if (this.snowQueenDiamondDustCount >= 80) {
+                this.snowQueenDiamondDustActive = false;
+                this.snowQueenActionT = 0;
+            }
+            this.snowQueenSpriteState = 'BLIZZARD';
+            this.snowQueenStateEndT = 120;
+            return;
+        }
+
         this.snowQueenActionT++;
         if (this.snowQueenActionT < this.snowQueenActionInterval) return;
         this.snowQueenActionT = 0;
 
         const weights1 = { ice_shot: 30, spread_shot: 20, blizzard: 20, shield_guard: 20, burst: 10 };
-        const weights2 = { ice_shot: 15, spread_shot: 25, blizzard: 30, shield_guard: 10, burst: 20 };
+        const weights2 = { ice_shot: 10, spread_shot: 15, blizzard: 15, prism_burst: 30, crystal_shard: 20, diamond_dust: 8, shield_guard: 2 };
         const w = this.snowQueenPhase === 2 ? weights2 : weights1;
-        const actions = Object.keys(w);
-        const r = Math.random() * (w.ice_shot + w.spread_shot + w.blizzard + w.shield_guard + w.burst);
-        let action = actions[0];
+        const sum2 = w.ice_shot + w.spread_shot + w.blizzard + (w.prism_burst || 0) + (w.crystal_shard || 0) + (w.diamond_dust || 0) + w.shield_guard + (w.burst || 0);
+        const r = Math.random() * sum2;
+        let action = 'ice_shot';
         let acc = 0;
-        for (const k of actions) { acc += w[k]; if (r <= acc) { action = k; break; } }
+        for (const k of Object.keys(w)) { acc += w[k]; if (r <= acc) { action = k; break; } }
 
-        const mult = this.snowQueenEnraged ? 1.6 : 1;
         if (action === 'ice_shot') {
             this.snowQueenSpriteState = 'SHOOT';
             this._playBossSE(opts, 'shot');
             const dx = px - this.x; const dy = py - this.y; const d = Math.hypot(dx, dy) || 1;
             const spd = 6.5;
-            for (let i = 0; i < 3; i++) {
-                const off = (Math.random() - 0.5) * 0.1;
+            const n = this.snowQueenPhase === 2 ? 4 : 4;
+            for (let i = 0; i < n; i++) {
+                const off = (i - (n - 1) / 2) * 0.08 + (Math.random() - 0.5) * 0.05;
                 const nx = dx / d; const ny = dy / d;
                 const cos = Math.cos(off); const sin = Math.sin(off);
                 const vx = (nx * cos - ny * sin) * spd; const vy = (nx * sin + ny * cos) * spd;
@@ -1036,7 +1469,8 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
             this.snowQueenSpriteState = 'SHOOT';
             this._playBossSE(opts, 'shot');
             const baseAngle = Math.atan2(py - this.y, px - this.x);
-            const n = 8; const spread = Math.PI / 3;
+            const n = this.snowQueenPhase === 2 ? 10 : 10;
+            const spread = Math.PI / 2.5;
             for (let i = 0; i < n; i++) {
                 const a = baseAngle - spread / 2 + (spread / (n - 1 || 1)) * i;
                 const spd = 5.2;
@@ -1045,7 +1479,7 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
         } else if (action === 'blizzard') {
             this.snowQueenSpriteState = 'BLIZZARD';
             this._playBossSE(opts, 'big');
-            const count = this.snowQueenEnraged ? 36 : 24;
+            const count = this.snowQueenPhase === 2 ? 36 : 30;
             for (let i = 0; i < count; i++) {
                 const a = Math.random() * Math.PI * 2;
                 const spd = 3 + Math.random() * 5;
@@ -1061,19 +1495,42 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
         } else if (action === 'burst') {
             this.snowQueenSpriteState = 'BURST';
             this._playBossSE(opts, 'big');
-            const count = this.snowQueenEnraged ? 24 : 16;
+            const count = this.snowQueenPhase === 2 ? 24 : 20;
             const spd = 5.8;
             for (let i = 0; i < count; i++) {
                 const a = (Math.PI * 2 / count) * i;
                 bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, color: ice, r: 6 });
             }
             fx.burst(this.x, this.y, ice, 20, 5);
+        } else if (action === 'prism_burst') {
+            this.snowQueenPrismBurstActive = true;
+            this.snowQueenPrismBurstT = 0;
+            this.snowQueenSpriteState = 'BURST';
+            this.snowQueenStateEndT = 100;
+        } else if (action === 'crystal_shard') {
+            this.snowQueenSpriteState = 'SHOOT';
+            this._playBossSE(opts, 'shot');
+            const baseAngle = Math.atan2(py - this.y, px - this.x);
+            for (let i = 0; i < 5; i++) {
+                const a = baseAngle + (i - 2) * 0.2;
+                const spd = 4.5;
+                const hue = (i * 72) % 360;
+                bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, color: `hsl(${hue}, 100%, 70%)`, r: 5, hue: hue, splitAt: 40, splitCount: 3 });
+            }
+            this.snowQueenStateEndT = 80;
+        } else if (action === 'diamond_dust') {
+            this.snowQueenDiamondDustActive = true;
+            this.snowQueenDiamondDustT = 0;
+            this.snowQueenDiamondDustCount = 0;
+            this._playBossSE(opts, 'big');
+            this.snowQueenSpriteState = 'BLIZZARD';
+            this.snowQueenStateEndT = 120;
         }
-        if (['SHOOT', 'BLIZZARD', 'BURST'].indexOf(this.snowQueenSpriteState) >= 0) this.snowQueenStateEndT = 80;
+        if (['SHOOT', 'BLIZZARD', 'BURST'].indexOf(this.snowQueenSpriteState) >= 0) this.snowQueenStateEndT = Math.max(this.snowQueenStateEndT || 0, 80);
     }
 
     /** ボス7面: 裂け目そのもの・ヴォイド — オムニウスゲイズ / ボイドフラグメント / ネオンクラック / ディメンショナルパルス / アイスパウン。ピンチでヴォイドアポカリプス */
-    Boss.prototype.updateBossVoid = function(px, py, bullets, fx, opts) {
+    updateBossVoid(px, py, bullets, fx, opts) {
         const W = CFG.W; const H = CFG.H;
         const voidColor = '#8E44AD'; const neon = '#BB8FCE'; const fragmentColor = '#1A1A2E';
 
@@ -1190,10 +1647,10 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
         }
 
         if (this.anim.state !== 'IDLE' && this.anim.done) this.anim.set('IDLE');
-    };
+    }
 
     /** 旧ボス4面: CHAOS（未使用・idx3は鉄翼に変更済み） */
-    Boss.prototype.updateBoss3 = function(px, py, bullets, fx, sd, opts) {
+    updateBoss3(px, py, bullets, fx, sd, opts) {
         const W = CFG.W; const H = CFG.H;
         const purple = '#7B00FF'; const purpleLight = '#C39BFF';
         const teleportCDMax = this.berserk ? 48 : 150;
@@ -1296,9 +1753,9 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
         }
 
         if (this.anim.state !== 'IDLE' && this.anim.done) this.anim.set('IDLE');
-    };
+    }
 
-    Boss.prototype.draw = function(c) {
+    draw(c) {
         if (!this.active && this.anim.state !== 'DEATH') return;
         const f = this.anim.frame, t = this.timer, sc = 2.2 + Math.sin(t * 0.04) * 0.15, deathScale = this.anim.state === 'DEATH' ? 1 - f / 5 : 1;
         if (this.phase === 4 && this.laserWarn > 0 && this.laserWarn <= 60 && this.arrived) {
@@ -1587,7 +2044,7 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
             const sx = col * cellW; const sy = row * cellH;
             const BOSS_DISPLAY_MAX = 300;
             let baseScale = (BOSS_DISPLAY_MAX / Math.max(cellW, cellH, 1)) * (1 + Math.sin(t * 0.04) * 0.02) * deathScale * BOSS_SIZE_SCALE;
-            baseScale *= 1.4; /* 4面ボスを1.4倍に */
+            baseScale *= 1.68; /* 4面ボス 1.4×1.2 */
             const drawW = cellW * baseScale; const drawH = cellH * baseScale;
             this._drawW = drawW; this._drawH = drawH;
             const floatY = Math.sin(t * 0.015) * 12;
@@ -1642,24 +2099,29 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
             if (this.hitFlash > 0) { c.globalCompositeOperation = 'source-over'; c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1; }
             else { c.globalCompositeOperation = 'multiply'; c.globalAlpha = 0.3; c.fillStyle = this.color; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; }
         } else if (this.idx === 6 && this.form === 0 && IMG.boss7) {
-            /* BOSS7: 7面ボス第一段階（ヴォイド）3×2グリッド 6フレーム。idle 0-2 / attack 3 / recovery 4 / ready 5。約720×1080→240×540/フレーム */
+            /* BOSS7（ラスボス第1形態）: 2列×3行 6フレーム。idle [0,1] / charge [0,1,2] / burst 3 / discharge [4,5] / full [0..5] */
             const img = IMG.boss7;
-            const BOSS7_COLS = 3; const BOSS7_ROWS = 2;
-            const cellW = Math.floor((img.naturalWidth || 720) / BOSS7_COLS);
-            const cellH = Math.floor((img.naturalHeight || 1080) / BOSS7_ROWS);
-            const stateToFrame = { IDLE: -1, ATTACK: 3, CHARGE: 4, HIT: 2, DEATH: 0 };
-            let frameIdx = stateToFrame[this.anim.state];
-            if (frameIdx === undefined) frameIdx = 0;
-            if (frameIdx === -1) frameIdx = Math.floor(this.timer / 20) % 3;
-            frameIdx = Math.min(5, Math.max(0, frameIdx));
-            const col = frameIdx % BOSS7_COLS; const row = Math.floor(frameIdx / BOSS7_COLS);
-            const sx = col * cellW; const sy = row * cellH;
+            const BOSS7_COLS = 2, BOSS7_ROWS = 3, BOSS7_TOTAL = 6;
+            const cellW = Math.floor((img.naturalWidth || 384) / BOSS7_COLS);
+            const cellH = Math.floor((img.naturalHeight || 576) / BOSS7_ROWS);
+            const sequences = { idle: [0, 1], charge: [0, 1, 2], burst: [3], discharge: [4, 5], full: [0, 1, 2, 3, 4, 5] };
+            const stateToSequence = { IDLE: 'idle', CHARGE: 'charge', ATTACK: 'burst', HIT: 'discharge', DEATH: 'full' };
+            const seqName = stateToSequence[this.anim.state] || 'idle';
+            const seq = sequences[seqName];
+            const seqIdx = Math.floor(this.timer / 10) % seq.length;
+            const frameIdx = seq[seqIdx];
+            const col = frameIdx % BOSS7_COLS;
+            const row = Math.floor(frameIdx / BOSS7_COLS);
+            const sx = col * cellW;
+            const sy = row * cellH;
             const BOSS_DISPLAY_MAX = 380;
             const maxDim = Math.max(cellW, cellH, 1);
             let baseScale = (BOSS_DISPLAY_MAX / maxDim) * (1 + Math.sin(t * 0.04) * 0.02) * deathScale * BOSS_SIZE_SCALE;
-            if (this.idx === 6) baseScale *= 1.5;
-            const drawW = cellW * baseScale; const drawH = cellH * baseScale;
-            this._drawW = drawW; this._drawH = drawH;
+            baseScale *= 1.5;
+            const drawW = cellW * baseScale;
+            const drawH = cellH * baseScale;
+            this._drawW = drawW;
+            this._drawH = drawH;
             if (useIntroPixel || useDeathPixel) {
                 const smallW = Math.max(4, Math.floor(drawW / pixelScale)); const smallH = Math.max(4, Math.floor(drawH / pixelScale));
                 if (!this._pixBuf || this._pixBuf.width !== smallW || this._pixBuf.height !== smallH) { this._pixBuf = document.createElement('canvas'); this._pixBuf.width = smallW; this._pixBuf.height = smallH; }
@@ -1692,7 +2154,7 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
             const col = frameIdx % COLS; const row = Math.floor(frameIdx / COLS);
             const sx = col * cellW; const sy = row * cellH;
             const BOSS_DISPLAY_MAX = 400;
-            let baseScale = (BOSS_DISPLAY_MAX / Math.max(cellW, cellH, 1)) * (1 + Math.sin(t * 0.04) * 0.02) * deathScale * BOSS_SIZE_SCALE * 1.3;
+            let baseScale = (BOSS_DISPLAY_MAX / Math.max(cellW, cellH, 1)) * (1 + Math.sin(t * 0.04) * 0.02) * deathScale * BOSS_SIZE_SCALE * 1.56; /* 6面ボス 1.3×1.2 */
             const drawW = cellW * baseScale; const drawH = cellH * baseScale;
             this._drawW = drawW; this._drawH = drawH;
             c.scale(-1, 1);
@@ -1700,6 +2162,41 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
             c.scale(-1, 1);
             if (this.hitFlash > 0) { c.globalCompositeOperation = 'source-over'; c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1; }
             else { c.globalCompositeOperation = 'multiply'; c.globalAlpha = 0.35; c.fillStyle = this.color; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; }
+        } else if (this.idx === 6 && this.form === 1 && IMG.lastboss2) {
+            /* ラスボス第2形態: lastboss2.png を 3列×2行（6フレーム）スプライトとして再生 */
+            const img = IMG.lastboss2;
+            const LASTBOSS2_COLS = 3, LASTBOSS2_ROWS = 2, LASTBOSS2_TOTAL = LASTBOSS2_COLS * LASTBOSS2_ROWS;
+            const cellW = Math.floor((img.naturalWidth || 384) / LASTBOSS2_COLS);
+            const cellH = Math.floor((img.naturalHeight || 256) / LASTBOSS2_ROWS);
+            const currentFrame = this.anim.state === 'DEATH' ? 0 : Math.floor(this.timer / 8) % LASTBOSS2_TOTAL;
+            const col = currentFrame % LASTBOSS2_COLS;
+            const row = Math.floor(currentFrame / LASTBOSS2_COLS);
+            const sx = col * cellW, sy = row * cellH;
+            const BOSS_DISPLAY_MAX = 440;
+            const maxDim = Math.max(cellW, cellH, 1);
+            let baseScale = (BOSS_DISPLAY_MAX / maxDim) * (1 + Math.sin(t * 0.04) * 0.03) * deathScale * BOSS_SIZE_SCALE;
+            baseScale *= 1.5;
+            const drawW = cellW * baseScale, drawH = cellH * baseScale;
+            this._drawW = drawW; this._drawH = drawH;
+            if (useIntroPixel || useDeathPixel) {
+                const smallW = Math.max(4, Math.floor(drawW / pixelScale)); const smallH = Math.max(4, Math.floor(drawH / pixelScale));
+                if (!this._pixBuf || this._pixBuf.width !== smallW || this._pixBuf.height !== smallH) { this._pixBuf = document.createElement('canvas'); this._pixBuf.width = smallW; this._pixBuf.height = smallH; }
+                const buf = this._pixBuf.getContext('2d'); buf.drawImage(img, sx, sy, cellW, cellH, 0, 0, smallW, smallH);
+                if (!useDeathPixel) { buf.globalCompositeOperation = 'multiply'; buf.globalAlpha = 0.35; buf.fillStyle = this.color; buf.fillRect(0, 0, smallW, smallH); buf.globalAlpha = 1; buf.globalCompositeOperation = 'source-over'; }
+                c.imageSmoothingEnabled = false; c.drawImage(this._pixBuf, 0, 0, smallW, smallH, -drawW / 2, -drawH / 2, drawW, drawH); c.imageSmoothingEnabled = true;
+            } else {
+                c.drawImage(img, sx, sy, cellW, cellH, -drawW / 2, -drawH / 2, drawW, drawH);
+            }
+            if (!useIntroPixel && !useDeathPixel) {
+                if (this.hitFlash > 0) {
+                    c.globalCompositeOperation = 'source-over';
+                    c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1;
+                } else {
+                    c.globalCompositeOperation = 'multiply';
+                    c.globalAlpha = 0.35; c.fillStyle = this.color; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1;
+                    c.globalCompositeOperation = 'source-over';
+                }
+            }
         } else if (bossImg) {
             const iw = bossImg.naturalWidth || 64, ih = bossImg.naturalHeight || 64;
             const BOSS_DISPLAY_MAX = 440;
@@ -1743,6 +2240,12 @@ Boss.prototype.updateBoss1 = function(px, py, bullets, fx, opts) {
             const bw = 320, bx = CFG.W / 2 - bw / 2; c.fillStyle = "rgba(0,0,0,0.6)"; c.fillRect(bx - 2, 16, bw + 4, 18); c.fillStyle = "#330000"; c.fillRect(bx, 18, bw, 14);
             const ratio = clamp(this.hp / this.maxHp, 0, 1); c.fillStyle = this.color; c.fillRect(bx, 18, bw * ratio, 14); c.fillStyle = "#e0cda7"; c.font = "14px serif"; c.textAlign = "center";             c.fillText(this.name, CFG.W / 2, 14); c.textAlign = "left";
         }
-    };
+    }
+    get cx() { return this.x; }
+    get cy() { return this.y; }
+}
+
+global.CrowDestiny = global.CrowDestiny || {};
+global.CrowDestiny.Boss = Boss;
 
 })(typeof window !== 'undefined' ? window : this);

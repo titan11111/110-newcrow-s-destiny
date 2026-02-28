@@ -31,6 +31,8 @@ class Crow {
         this.bossAbilityCD = [0, 0, 0, 0, 0, 0, 0];
         /** スキルボタンで切り替える「現在選択中のスキル」の番号（取得済みスキル内で 0, 1, 2, …） */
         this.currentSkillSlotIndex = 0;
+        /** 分身カラス（灰スキル）の残りフレーム。30秒＝1800 */
+        this.cloneCrowT = 0;
     }
     update(keys) {
         if (this.anim.state === 'KO') return;
@@ -67,6 +69,7 @@ class Crow {
             if (this.dashChargeCD > 0) { this.dashChargeCD--; if (this.dashChargeCD <= 0) { this.dashCharges++; if (this.dashCharges < maxCharges) this.dashChargeCD = chargeCD; } }
         }
         for (let i = 0; i < 7; i++) if (this.bossAbilityCD[i] > 0) this.bossAbilityCD[i]--;
+        if (this.cloneCrowT > 0) this.cloneCrowT--;
         /* 左右どちらの入力でも向きは変えない（常に右向き） */
         this.x += this.vx; this.y += this.vy;
         this.x = clamp(this.x, CFG.MARGIN, CFG.W - this.w - CFG.MARGIN);
@@ -199,14 +202,22 @@ class Crow {
     }
     drawFeathers(c) {
         for (let i = this.feathers.length - 1; i >= 0; i--) {
-            const f = this.feathers[i]; f.x += f.vx; f.y += f.vy; f.life++;
+            const f = this.feathers[i];
             if (f.x < -30 || f.x > CFG.W + 30 || f.y < -30 || f.y > CFG.H + 30) f.active = false;
             if (!f.active) { this.feathers.splice(i, 1); continue; }
-            if (f.isBeam) {
+            if (f.isBeam || f.isPurpleSword) {
                 c.save(); c.translate(f.x, f.y); c.rotate(Math.atan2(f.vy, f.vx));
-                c.strokeStyle = "#ff2222"; c.fillStyle = "rgba(255,80,80,0.7)"; c.lineWidth = 2;
-                c.beginPath(); c.moveTo(-20, 0); c.lineTo(16, 0); c.stroke();
-                c.fillRect(-20, -3, 36, 6); c.restore();
+                const col = f.color || '#ff2222';
+                c.strokeStyle = col;
+                if (f.color && f.color.length >= 7) {
+                    const r = parseInt(f.color.slice(1, 3), 16), g = parseInt(f.color.slice(3, 5), 16), b = parseInt(f.color.slice(5, 7), 16);
+                    c.fillStyle = `rgba(${r},${g},${b},0.85)`;
+                } else c.fillStyle = 'rgba(255,80,80,0.7)';
+                c.lineWidth = f.isPurpleSword ? 3 : 2;
+                const len = f.isPurpleSword ? 32 : 20;
+                c.beginPath(); c.moveTo(-len, 0); c.lineTo(len, 0); c.stroke();
+                c.fillRect(-len, -4, len * 2, 8);
+                c.restore();
             } else if (f.isGalaxy) {
                 // ギャラクシー砲: 手前に光る球＋一直線レーザー（青白・浄化の青いほむら）
                 c.save();
