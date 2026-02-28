@@ -41,6 +41,10 @@ class Enemy {
         const useSprite = arguments.length > 5 && arguments[5] === true;
         this.spriteKey = (stageIdx !== undefined && Config.STAGE_SPRITE_KEYS[stageIdx] && useSprite)
             ? Config.STAGE_SPRITE_KEYS[stageIdx] : null;
+        if (this.spriteKey === 'steam_wolf') {
+            this.hp = 180;
+            this.maxHp = 180;
+        }
         const si = stageIdx !== undefined ? Math.min(stageIdx, 6) : 0;
         const pool = Config.BEHAVIOR_POOL[si] || Config.BEHAVIOR_POOL[0];
         this.behaviorType = pool[ri(0, pool.length - 1)];

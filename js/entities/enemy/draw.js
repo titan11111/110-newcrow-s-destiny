@@ -123,9 +123,12 @@ function drawEnemy(e, c) {
             const row = Math.min(2, Math.max(0, sf.row || 0));
             const srcX = col * fw;
             const srcY = row * fh;
-            const scale = 0.28;
+            const scale = e.spriteKey === 'steam_wolf' ? 0.28 * 1.3 : 0.28;
+            const tension = (e.spriteKey === 'steam_wolf' && e.steamWolfTension > 0) ? e.steamWolfTension : 0;
+            const shakeX = tension * (Math.random() - 0.5) * 2;
+            const shakeY = tension * (Math.random() - 0.5) * 2;
             c.save();
-            c.translate(cx, cy);
+            c.translate(cx + shakeX, cy + shakeY);
             if (e.anim.state === 'DEATH') {
                 const ds = 1 - f / 4;
                 c.globalAlpha = ds;
