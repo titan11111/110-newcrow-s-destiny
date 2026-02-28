@@ -222,51 +222,61 @@ class Game {
         const W = CFG.W;
         const H = CFG.H;
         if (idx === 0) {
-            cr.feathers.push({ x: cx, y: cy, vx: cr.facing * 14, vy: 0, active: true, life: 0, isBeam: true, color: '#9B59D6', isPurpleSword: true });
-            this.fx.burst(cx, cy, '#9B59D6', 12, 4);
-        } else if (idx === 1) {
-            const spd = 16;
-            for (const a of [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4]) {
-                cr.feathers.push({ x: cx, y: cy, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, life: 0, isBeam: true, color: '#2ECC71' });
+            /* 紫スキル: ホーミング誘導剣を3本扇状に発射（上・中・下） */
+            const swordOffsets = [{ yo: -12, vy: -0.5 }, { yo: 0, vy: 0 }, { yo: 12, vy: 0.5 }];
+            for (const s of swordOffsets) {
+                cr.feathers.push({ x: cx, y: cy + s.yo, vx: cr.facing * 16, vy: s.vy, active: true, life: 0, isBeam: true, color: '#9B59D6', isPurpleSword: true });
             }
-            this.fx.burst(cx, cy, '#2ECC71', 14, 4);
+            this.fx.burst(cx, cy, '#9B59D6', 20, 5);
+        } else if (idx === 1) {
+            /* 緑スキル: 8方向全方位エネルギー矢（4→8本） */
+            const spd = 17;
+            for (let i = 0; i < 8; i++) {
+                const a = (Math.PI / 4) * i;
+                cr.feathers.push({ x: cx, y: cy, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, life: 0, isBeam: true, color: '#2ECC71', isGreenArrow: true });
+            }
+            this.fx.burst(cx, cy, '#2ECC71', 22, 6);
         } else if (idx === 2) {
             cr.cloneCrowT = 30 * 60;
             this.efx.add("CLONE", "#95a5a6", 60);
             this.fx.burst(cx, cy, '#7F8C8D', 16, 5);
         } else if (idx === 3) {
+            /* 赤スキル: 群れカラス 9羽(3×3)に強化 */
             const baseY = cr.y + cr.h / 2;
-            for (let row = 0; row < 2; row++) {
+            for (let row = 0; row < 3; row++) {
                 for (let col = 0; col < 3; col++) {
                     this.flockCrows.push({
-                        x: cr.x - 40 - col * 25,
-                        y: baseY - 20 + row * 28 + (col % 2) * 8,
-                        vx: 18,
-                        vy: 0,
+                        x: cr.x - 50 - col * 22,
+                        y: baseY - 25 + row * 22 + (col % 2) * 6,
+                        vx: 20,
+                        vy: (row - 1) * 0.6,
                         active: true,
-                        damage: 12
+                        damage: 15
                     });
                 }
             }
-            this.fx.burst(cx, cy, '#E74C3C', 18, 5);
+            this.fx.burst(cx, cy, '#E74C3C', 26, 7);
         } else if (idx === 4) {
+            /* 青スキル: バリア3ヒット耐久に強化 */
             cr.barrier = Math.max(cr.barrier, 20 * 60);
+            cr.barrierHits = 3;
             this.efx.add("BARRIER", "#3498DB", 80);
-            this.fx.burst(cx, cy, '#3498DB', 20, 6);
+            this.fx.burst(cx, cy, '#aaeeff', 28, 7);
         } else if (idx === 5) {
-            for (let i = 0; i < 80; i++) {
+            /* 白スキル: 100粒・3秒(180f)・damage5・ゆっくり漂う */
+            for (let i = 0; i < 100; i++) {
                 this.snowParticles.push({
                     x: Math.random() * (W + 100) - 50,
                     y: Math.random() * (H + 50) - 25,
-                    vx: (Math.random() - 0.5) * 8,
-                    vy: (Math.random() - 0.5) * 6,
+                    vx: (Math.random() - 0.5) * 5,
+                    vy: (Math.random() - 0.5) * 3.5,
                     active: true,
                     life: 0,
-                    maxLife: 120,
-                    damage: 3
+                    maxLife: 180,
+                    damage: 5
                 });
             }
-            this.fx.burst(cx, cy, '#ECF0F1', 25, 8);
+            this.fx.burst(cx, cy, '#ECF0F1', 35, 8);
         }
     }
 
@@ -371,7 +381,7 @@ class Game {
             this.eBullets.forEach(b => { b.x += b.vx; b.y += b.vy; if (b.x < -30 || b.x > CFG.W + 30 || b.y < -30 || b.y > CFG.H + 30) b.active = false; });
             if (processExplosiveBullets) processExplosiveBullets(this.eBullets, this);
             this._updateFeathersAndSkills();
-            this.flockCrows.forEach(fc => { fc.x += fc.vx; if (fc.x > CFG.W + 60) fc.active = false; });
+            this.flockCrows.forEach(fc => { fc.x += fc.vx; fc.y += (fc.vy || 0); if (fc.x > CFG.W + 60) fc.active = false; });
             this.snowParticles.forEach(s => { s.x += s.vx; s.y += s.vy; s.life++; if (s.life > (s.maxLife || 120) || s.x < -20 || s.x > CFG.W + 20 || s.y < -20 || s.y > CFG.H + 20) s.active = false; });
             this.relics.forEach(r => r.update(ss)); this.obstacles.forEach(o => o.update(ss)); checkCollisions(this);
             this.enemies = this.enemies.filter(e => e.active); this.crow.feathers = this.crow.feathers.filter(f => f.active); this.flockCrows = this.flockCrows.filter(fc => fc.active); this.snowParticles = this.snowParticles.filter(s => s.active); this.bulletPool.releaseInactive(); this.relics = this.relics.filter(r => r.active); this.obstacles = this.obstacles.filter(o => o.active);
@@ -419,7 +429,7 @@ class Game {
             }
             this.crow.update(keys); this.tryTriggerBossAbility(); this._updateSkillButton();
             this._updateFeathersAndSkills();
-            this.flockCrows.forEach(fc => { fc.x += fc.vx; if (fc.x > CFG.W + 60) fc.active = false; });
+            this.flockCrows.forEach(fc => { fc.x += fc.vx; fc.y += (fc.vy || 0); if (fc.x > CFG.W + 60) fc.active = false; });
             this.snowParticles.forEach(s => { s.x += s.vx; s.y += s.vy; s.life++; if (s.life > (s.maxLife || 120) || s.x < -20 || s.x > CFG.W + 20 || s.y < -20 || s.y > CFG.H + 20) s.active = false; });
             if (this.boss && this.boss.idx === 3) {
                 this.playerPathHistory.push({ x: this.crow.cx, y: this.crow.cy });
@@ -506,11 +516,32 @@ class Game {
             c.save(); c.globalAlpha = 0.55; c.translate(28, 0); c.scale(0.9, 0.9); this.crow.draw(c); c.restore();
         }
         this.flockCrows.forEach(fc => {
-            c.save(); c.fillStyle = '#E74C3C'; c.shadowColor = '#E74C3C'; c.shadowBlur = 6; c.beginPath(); c.arc(fc.x, fc.y, 10, 0, Math.PI * 2); c.fill(); c.shadowBlur = 0; c.strokeStyle = '#ff8866'; c.lineWidth = 2; c.stroke(); c.restore();
+            if (!fc.active) return;
+            c.save();
+            c.translate(fc.x, fc.y);
+            c.shadowColor = '#E74C3C'; c.shadowBlur = 10;
+            /* 胴体 */
+            c.fillStyle = '#c0392b';
+            c.beginPath(); c.ellipse(0, 0, 9, 6, 0, 0, Math.PI * 2); c.fill();
+            /* 翼（上下）*/
+            c.fillStyle = '#E74C3C';
+            c.beginPath(); c.moveTo(-4, 0); c.quadraticCurveTo(-2, -12, 8, -6); c.quadraticCurveTo(4, -4, -4, 0); c.fill();
+            c.beginPath(); c.moveTo(-4, 0); c.quadraticCurveTo(-2, 12, 8, 6); c.quadraticCurveTo(4, 4, -4, 0); c.fill();
+            /* くちばし */
+            c.fillStyle = '#ff6644';
+            c.beginPath(); c.moveTo(9, 0); c.lineTo(14, -2); c.lineTo(14, 2); c.closePath(); c.fill();
+            c.restore();
         });
         this.snowParticles.forEach(s => {
             if (!s.active) return;
-            c.save(); c.fillStyle = 'rgba(255,255,255,' + (0.4 + 0.4 * (1 - s.life / (s.maxLife || 120))) + ')'; c.beginPath(); c.arc(s.x, s.y, 3, 0, Math.PI * 2); c.fill(); c.restore();
+            const prog = 1 - s.life / (s.maxLife || 180);
+            const alpha = 0.35 + 0.5 * prog;
+            const r = 2 + prog * 2;
+            c.save();
+            c.shadowColor = '#aaddff'; c.shadowBlur = 5;
+            c.fillStyle = `rgba(220,240,255,${alpha})`;
+            c.beginPath(); c.arc(s.x, s.y, r, 0, Math.PI * 2); c.fill();
+            c.restore();
         });
         this.crow.draw(c); if (this.boss) this.boss.draw(c); this.fx.draw(c); this.fx.drawArenaEffects(c); this.fx.drawFlash(c); this.efx.draw(c, this.crow);
         if (mirror) c.restore();
