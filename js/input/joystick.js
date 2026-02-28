@@ -147,6 +147,89 @@ class VirtualJoystick {
         this.canvas.addEventListener('touchcancel', this._boundTouchEnd, { passive: false });
     }
 
+    /**
+     * HTMLモード: 左パネルdivでタッチ取得、HTML要素でビジュアル表示（canvas描画なし）
+     * @param {HTMLElement} zoneEl - #joystick-zone div
+     */
+    setupHTMLMode(zoneEl) {
+        this._htmlMode = true;
+        this._zoneEl = zoneEl;
+        this._baseEl = document.getElementById('joystick-base');
+        this._stickEl = document.getElementById('joystick-stick');
+        this._htmlMaxRadius = 80; /* CSS px: ノブ可動範囲 */
+
+        /* 起動時は非表示 */
+        if (this._baseEl) this._baseEl.style.opacity = '0';
+
+        zoneEl.addEventListener('touchstart', (e) => this._htmlTouchStart(e), { passive: false });
+        zoneEl.addEventListener('touchmove',  (e) => this._htmlTouchMove(e),  { passive: false });
+        zoneEl.addEventListener('touchend',   (e) => this._htmlTouchEnd(e),   { passive: false });
+        zoneEl.addEventListener('touchcancel',(e) => this._htmlTouchEnd(e),   { passive: false });
+    }
+
+    _htmlTouchStart(e) {
+        if (this.joystickTouchId !== null) return;
+        const touch = e.changedTouches[0];
+        e.preventDefault();
+        this.joystickTouchId = touch.identifier;
+        const rect = this._zoneEl.getBoundingClientRect();
+        const tx = touch.clientX - rect.left;
+        const ty = touch.clientY - rect.top;
+        this.stickOrigin = { x: tx, y: ty };
+        this.rawInputX = 0;
+        this.rawInputY = 0;
+        this._positionHTMLJoystick(tx, ty, tx, ty);
+        if (this._baseEl) this._baseEl.style.opacity = '0.75';
+    }
+
+    _htmlTouchMove(e) {
+        for (const touch of e.changedTouches) {
+            if (touch.identifier !== this.joystickTouchId) continue;
+            e.preventDefault();
+            const rect = this._zoneEl.getBoundingClientRect();
+            const tx = touch.clientX - rect.left;
+            const ty = touch.clientY - rect.top;
+            const ox = this.stickOrigin.x, oy = this.stickOrigin.y;
+            const dx = tx - ox, dy = ty - oy;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const maxR = this._htmlMaxRadius;
+            const clampedDist = Math.min(dist, maxR);
+            const angle = dist > 0 ? Math.atan2(dy, dx) : 0;
+            const kx = ox + Math.cos(angle) * clampedDist;
+            const ky = oy + Math.sin(angle) * clampedDist;
+            this.rawInputX = dist > 0 ? clamp(dx / maxR, -1, 1) : 0;
+            this.rawInputY = dist > 0 ? clamp(dy / maxR, -1, 1) : 0;
+            this._positionHTMLJoystick(ox, oy, kx, ky);
+            break;
+        }
+    }
+
+    _htmlTouchEnd(e) {
+        for (const touch of e.changedTouches) {
+            if (touch.identifier !== this.joystickTouchId) continue;
+            this.joystickTouchId = null;
+            this.rawInputX = 0;
+            this.rawInputY = 0;
+            this.stickOrigin = null;
+            if (this._baseEl) this._baseEl.style.opacity = '0';
+            break;
+        }
+    }
+
+    /** ベースとノブのCSS位置を更新 */
+    _positionHTMLJoystick(baseX, baseY, knobX, knobY) {
+        if (!this._baseEl || !this._stickEl) return;
+        const baseR = 80;  /* joystick-base の半径(px): width/2 */
+        const knobR = 35;  /* joystick-stick の半径(px): width/2 */
+        this._baseEl.style.position = 'absolute';
+        this._baseEl.style.left = (baseX - baseR) + 'px';
+        this._baseEl.style.top  = (baseY - baseR) + 'px';
+        this._stickEl.style.position = 'absolute';
+        this._stickEl.style.transform = 'none';
+        this._stickEl.style.left = (knobX - baseX + baseR - knobR) + 'px';
+        this._stickEl.style.top  = (knobY - baseY + baseR - knobR) + 'px';
+    }
+
     update() {
         if (this.joystickFadeFrames > 0) {
             this.joystickFadeFrames--;
@@ -166,6 +249,7 @@ class VirtualJoystick {
     }
 
     draw(c) {
+        if (this._htmlMode) return; /* HTMLモード: canvas描画なし */
         if (!this.stickOrigin || this.joystickAlpha <= 0) return;
         const o = this.stickOrigin;
         const k = this.knobPos || o;
