@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<!-- 縦向き時のみ表示：横画面でプレイするよう促す -->
+<!-- 縦向き時のみ表示 -->
 <div id="portrait-message" class="portrait-message" aria-hidden="true">
     <p>横にしてください</p>
 </div>
@@ -20,34 +20,29 @@
         <div class="altar-light"></div>
     </div>
 
-    <!-- 左パネル: ジョイスティック（幅固定） -->
-    <div id="left-panel" class="side-panel">
-        <div id="joystick-zone">
-            <div id="joystick-base">
-                <div id="joystick-stick"></div>
-            </div>
+    <!-- フルスクリーンキャンバス -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- 左下: ジョイスティックゾーン -->
+    <div id="joystick-zone">
+        <div id="joystick-base">
+            <div id="joystick-stick"></div>
         </div>
     </div>
 
-    <!-- 中央パネル: プレイ画面 -->
-    <div id="center-panel">
-        <canvas id="gameCanvas"></canvas>
+    <!-- 右下: DASH・SKILLの丸ボタン（GBスタイル） -->
+    <div id="action-buttons">
+        <button id="btn-skill" type="button" aria-label="スキル切替・発動" title="タップで切替・長押しで発動"></button>
+        <button id="btn-dash"  type="button" aria-label="ダッシュ" title="ダッシュ"></button>
     </div>
 
-    <!-- 右パネル: 右上＝START・ポーズ、右下＝スキル・DASH（設定ボタンなし） -->
-    <div id="right-panel" class="side-panel">
-        <div id="action-buttons">
-            <div class="action-buttons-top" aria-label="操作ボタン 上">
-                <button id="btn-pause" type="button" aria-label="一時停止" title="一時停止">Ⅱ</button>
-                <button id="btn-start" type="button" aria-label="開始">START</button>
-            </div>
-            <div class="action-buttons-bottom" aria-label="操作ボタン 下">
-                <button id="btn-skill" type="button" aria-label="スキル切替・発動" title="タップで切替・長押しで発動">スキル</button>
-                <button id="btn-dash" type="button" aria-label="ダッシュ" title="スペース/Shift/Xでも可">DASH</button>
-            </div>
-        </div>
+    <!-- 下中央: START・PAUSE 小型横長ボタン -->
+    <div id="center-buttons">
+        <button id="btn-pause" type="button" aria-label="一時停止">Ⅱ</button>
+        <button id="btn-start" type="button" aria-label="開始">START</button>
     </div>
 </div>
+
 <div id="joystick-settings-overlay" class="settings-overlay" aria-hidden="true">
     <div class="settings-panel">
         <h2 class="settings-title">音量</h2>
@@ -71,10 +66,10 @@
         <h2 class="settings-title">デッドゾーン</h2>
         <div class="settings-row">
             <span class="settings-label">小</span>
-            <input type="range" id="joystick-deadzone" min="0" max="0.4" step="0.05" value="0.15" aria-label="デッドゾーン">
+            <input type="range" id="joystick-deadzone" min="0" max="0.4" step="0.05" value="0.07" aria-label="デッドゾーン">
             <span class="settings-label">大</span>
         </div>
-        <p class="settings-value">デッドゾーン: <output id="out-deadzone">0.15</output></p>
+        <p class="settings-value">デッドゾーン: <output id="out-deadzone">0.07</output></p>
         <div class="settings-test-area" id="joystick-test-area">
             <span class="settings-test-label">テストエリア（ここでドラッグ）</span>
             <output id="out-test-xy" class="settings-test-out">X: 0.00  Y: 0.00</output>
@@ -82,7 +77,7 @@
         <button type="button" id="btn-settings-back" class="settings-back">戻る</button>
     </div>
 </div>
-<!-- 役割ごとの読み込み順（依存関係を満たす） -->
+
 <script src="js/core/config.js"></script>
 <script src="js/core/utils.js"></script>
 <script src="js/core/objectPool.js"></script>
@@ -94,7 +89,6 @@
 <script src="js/render/background.js"></script>
 <script src="js/render/hud.js"></script>
 <script src="js/entities/crow.js"></script>
-<!-- 敵: 定数 → 振る舞い(blue/gargoyle/ghost/homunculus/cyborg/beast/cosmic/normal) → 描画 → 本体 -->
 <script src="js/entities/enemy/config.js"></script>
 <script src="js/entities/enemy/behaviors/blue.js"></script>
 <script src="js/entities/enemy/behaviors/gargoyle.js"></script>
@@ -112,7 +106,6 @@
 <script src="js/entities/boss.js"></script>
 <script src="js/entities/relic.js"></script>
 <script src="js/input/joystick.js"></script>
-<!-- ゲームサブモジュール（役割ごと分割） -->
 <script src="js/game/constants.js"></script>
 <script src="js/game/bullets.js"></script>
 <script src="js/game/collision.js"></script>
@@ -122,7 +115,6 @@
 <script src="js/game.js"></script>
 <script src="js/main.js"></script>
 <script>
-/* 縦向き時のみ「横にしてください」表示（左パネル常時ジョイスティックは廃止・タッチで出現に変更済み） */
 (function () {
     var portraitEl = document.getElementById('portrait-message');
     function checkOrientation() {
