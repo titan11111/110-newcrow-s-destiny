@@ -61,7 +61,19 @@ class Crow {
             this.dashTrail.push({ x: this.x + this.w / 2, y: this.y + this.h / 2, life: this.DASH_TRAIL_LIFE, vx: this.vx, vy: this.vy });
             if (this.dashT <= 0) this.dashing = false;
         } else {
-            this.vx = mx * CFG.PLAYER_SPD; this.vy = my * CFG.PLAYER_SPD;
+            /* iOS向けスムーズ移動: ジョイスティック入力時はlerpで補間（慣性感をなくしつつカクつきを抑制）
+               キー入力時は即座に反映（レスポンス重視） */
+            const targetVx = mx * CFG.PLAYER_SPD;
+            const targetVy = my * CFG.PLAYER_SPD;
+            const isJoystick = keys['JoystickX'] !== undefined;
+            if (isJoystick) {
+                const lerpF = 0.45;
+                this.vx = this.vx + (targetVx - this.vx) * lerpF;
+                this.vy = this.vy + (targetVy - this.vy) * lerpF;
+            } else {
+                this.vx = targetVx;
+                this.vy = targetVy;
+            }
         }
         this.dashTrail.forEach(p => p.life--);
         this.dashTrail = this.dashTrail.filter(p => p.life > 0);
