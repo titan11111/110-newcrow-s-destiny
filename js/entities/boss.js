@@ -2237,13 +2237,22 @@ class Boss {
         }
         c.restore();
         if (this.arrived) {
-            /* ボスHP: スキルスロット(y=8〜28)と重ならないようy=30以降に配置 */
-            const bw = 320, bx = CFG.W / 2 - bw / 2;
-            c.fillStyle = "#e0cda7"; c.font = "13px serif"; c.textAlign = "center";
-            c.fillText(this.name, CFG.W / 2, 30);
-            c.fillStyle = "rgba(0,0,0,0.6)"; c.fillRect(bx - 2, 32, bw + 4, 16);
-            c.fillStyle = "#330000"; c.fillRect(bx, 33, bw, 14);
-            const ratio = clamp(this.hp / this.maxHp, 0, 1); c.fillStyle = this.color; c.fillRect(bx, 33, bw * ratio, 14);
+            /* ボスHP: 画面上部中央に配置（左=カラスゲージ、右=スコアと干渉しない幅280px） */
+            const bw = 280, bx = CFG.W / 2 - bw / 2;
+            /* ボス名 */
+            c.fillStyle = this.color; c.font = "bold 13px serif"; c.textAlign = "center";
+            c.shadowColor = this.color; c.shadowBlur = 8;
+            c.fillText(this.name, CFG.W / 2, 12);
+            c.shadowBlur = 0;
+            /* HP バー背景 */
+            c.fillStyle = "rgba(0,0,0,0.65)"; c.fillRect(bx - 2, 14, bw + 4, 14);
+            c.fillStyle = "#330000"; c.fillRect(bx, 15, bw, 12);
+            /* HP バー本体 */
+            const ratio = clamp(this.hp / this.maxHp, 0, 1);
+            c.fillStyle = this.color; c.fillRect(bx, 15, bw * ratio, 12);
+            /* HP % 表示 */
+            c.fillStyle = "rgba(255,255,255,0.75)"; c.font = "10px serif";
+            c.fillText(Math.ceil(ratio * 100) + '%', CFG.W / 2, 24);
             c.textAlign = "left";
         }
     }
