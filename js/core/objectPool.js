@@ -76,6 +76,8 @@ function resetBullet(b) {
     delete b.life; delete b.drag; delete b.accel; delete b.accelMax;
     delete b.glitch; delete b.glitchAngle; delete b.phaseAt; delete b.phase; delete b.phaseTargetX; delete b.phaseTargetY;
     delete b.curve; delete b.curveDecay;
+    delete b.hue; delete b.splitAt; delete b.splitCount;
+    delete b.gravity; delete b.explosive; delete b.explosionRadius; delete b.explosionDamage;
 }
 
 /** ゲーム用の敵弾プールとアダプタを生成 */

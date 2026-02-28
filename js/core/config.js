@@ -8,7 +8,7 @@ const CFG = {
     W: 960,
     H: 540,
     SCROLL: 2.5,
-    PLAYER_SPD: 5.5,
+    PLAYER_SPD: 6.6,   /* 5.5 × 1.2 = 6.6 (iOS向け速度調整) */
     DASH_SPD: 21,  /* 1.5倍（14*1.5）でダッシュ距離を延長 */
     /** ダッシュチャージ数（連続ダッシュ用） */
     DASH_CHARGES: 2,
@@ -56,8 +56,9 @@ const ASSETS = {
     boss5: 'images/boss5.png',
     /* BOSS6: 雪の女王 Snow Queen 3×2グリッド 6フレーム (IDLE/SHOOT/ENRAGE/BLIZZARD/SHIELD/BURST) */
     boss6: 'images/boss6.png',
-    /* BOSS7: 7面ボス第一段階（ヴォイド）3×2グリッド 6フレーム (idle 0-2 / attack 3 / recovery 4 / ready 5) 約240×540/フレーム */
+    /* BOSS7: ラスボス第1形態（ヴォイド）2列×3行 6フレーム (idle [0,1] / charge [0,1,2] / burst 3 / discharge [4,5] / full) */
     boss7: 'images/boss7.png',
+    /* ラスボス第2形態: 3列×2行 6フレームのスプライトシート */
     lastboss2: 'images/lastboss2.png',
     lastboss3: 'images/lastboss3.png',
     /** ラスボス 第二形態→第三形態（猫神）移行演出用・左から右に変化する5段階画像 */
