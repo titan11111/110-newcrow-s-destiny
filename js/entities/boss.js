@@ -2237,8 +2237,14 @@ class Boss {
         }
         c.restore();
         if (this.arrived) {
-            const bw = 320, bx = CFG.W / 2 - bw / 2; c.fillStyle = "rgba(0,0,0,0.6)"; c.fillRect(bx - 2, 16, bw + 4, 18); c.fillStyle = "#330000"; c.fillRect(bx, 18, bw, 14);
-            const ratio = clamp(this.hp / this.maxHp, 0, 1); c.fillStyle = this.color; c.fillRect(bx, 18, bw * ratio, 14); c.fillStyle = "#e0cda7"; c.font = "14px serif"; c.textAlign = "center";             c.fillText(this.name, CFG.W / 2, 14); c.textAlign = "left";
+            /* ボスHP: スキルスロット(y=8〜28)と重ならないようy=30以降に配置 */
+            const bw = 320, bx = CFG.W / 2 - bw / 2;
+            c.fillStyle = "#e0cda7"; c.font = "13px serif"; c.textAlign = "center";
+            c.fillText(this.name, CFG.W / 2, 30);
+            c.fillStyle = "rgba(0,0,0,0.6)"; c.fillRect(bx - 2, 32, bw + 4, 16);
+            c.fillStyle = "#330000"; c.fillRect(bx, 33, bw, 14);
+            const ratio = clamp(this.hp / this.maxHp, 0, 1); c.fillStyle = this.color; c.fillRect(bx, 33, bw * ratio, 14);
+            c.textAlign = "left";
         }
     }
     get cx() { return this.x; }
