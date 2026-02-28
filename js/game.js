@@ -74,8 +74,14 @@ class Game {
         this.playerPathHistory = [];
         /** フローティングジョイスティック（画面左半分タッチで移動） */
         this.joystick = new VirtualJoystick(this.cvs, (fx, fy) => {
-            this.keys['JoystickX'] = fx;
-            this.keys['JoystickY'] = fy;
+            if (fx === undefined) {
+                /* 離指: joystickキーを削除してキーボード入力モードへ即復帰 */
+                delete this.keys['JoystickX'];
+                delete this.keys['JoystickY'];
+            } else {
+                this.keys['JoystickX'] = fx;
+                this.keys['JoystickY'] = fy;
+            }
         });
         /* タッチデバイス(iOS/Android)では左パネルHTMLジョイスティックを使用 */
         const isTouch = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
@@ -174,16 +180,18 @@ class Game {
         if (!cr || !cr.unlockedBossAbilities) { btn.textContent = 'スキル'; return; }
         const unlockedIndices = [0,1,2,3,4,5,6].filter(i => cr.unlockedBossAbilities[i]);
         const nUnlocked = unlockedIndices.length;
-        if (nUnlocked === 0) { btn.textContent = 'スキル'; return; }
+        if (nUnlocked === 0) { btn.textContent = 'SKILL'; return; }
         const slotIdx = Math.min(cr.currentSkillSlotIndex ?? 0, nUnlocked - 1);
-        const currentBossIdx = unlockedIndices[slotIdx]; // 0始まりのボス番号
+        const currentBossIdx = unlockedIndices[slotIdx];
         const cd = (cr.bossAbilityCD && cr.bossAbilityCD[currentBossIdx]) || 0;
         const cdSec = cd > 0 ? Math.ceil(cd / 60) : 0;
+        /* 丸ボタン向けコンパクト表示 */
         if (cdSec > 0) {
-            btn.textContent = `スキル ${slotIdx + 1}/${nUnlocked}\nCD:${cdSec}s`;
-            btn.style.color = '#888';
+            btn.textContent = `${slotIdx + 1}/${nUnlocked}\nCD:${cdSec}s`;
+            btn.style.color = '#aa88bb';
+            btn.classList.remove('charging');
         } else {
-            btn.textContent = `スキル ${slotIdx + 1}/${nUnlocked}`;
+            btn.textContent = `SKILL\n${slotIdx + 1}/${nUnlocked}`;
             btn.style.color = '#cc88ff';
         }
     }
@@ -237,15 +245,21 @@ class Game {
             }
             this.fx.burst(cx, cy, '#9B59D6', 20, 5);
         } else if (idx === 1) {
-            /* 緑スキル: 8方向全方位エネルギー矢（4→8本） */
+            /* 緑スキル: 8方向感電ライトニング */
             const spd = 17;
             for (let i = 0; i < 8; i++) {
                 const a = (Math.PI / 4) * i;
                 cr.feathers.push({ x: cx, y: cy, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, life: 0, isBeam: true, color: '#2ECC71', isGreenArrow: true });
             }
-            this.fx.burst(cx, cy, '#2ECC71', 22, 6);
+            /* 感電バースト演出: 緑スパーク + 白コア + 軽い画面フラッシュ */
+            this.fx.burst(cx, cy, '#00ff88', 35, 9, 35);
+            this.fx.burst(cx, cy, '#aaffcc', 18, 5, 22);
+            this.fx.burst(cx, cy, '#ffffff', 10, 4, 15);
+            this.fx.flash = 5; this.fx.fCol = '#00ff66';
+            this.fx.shake = 4;
         } else if (idx === 2) {
-            cr.cloneCrowT = 30 * 60;
+            cr.cloneCrowT = 15 * 60; /* 15秒 */
+            cr.posHistory = [];      /* 履歴リセット */
             this.efx.add("CLONE", "#95a5a6", 60);
             this.fx.burst(cx, cy, '#7F8C8D', 16, 5);
         } else if (idx === 3) {
@@ -520,8 +534,14 @@ class Game {
         this.obstacles.forEach(o => o.draw(c)); this.relics.forEach(r => r.draw(c)); this.enemies.forEach(e => e.draw(c));
         this.eBullets.forEach(b => { if (!b.active) return; c.save(); c.globalAlpha = 0.85; c.fillStyle = b.color; c.beginPath(); c.arc(b.x, b.y, b.r || 5, 0, Math.PI * 2); c.fill(); c.globalAlpha = 0.3; c.beginPath(); c.arc(b.x, b.y, (b.r || 5) + 4, 0, Math.PI * 2); c.fill(); c.restore(); });
         this.crow.drawFeathers(c); this.crow.drawTrail(c);
-        if (this.crow.cloneCrowT > 0) {
-            c.save(); c.globalAlpha = 0.55; c.translate(28, 0); c.scale(0.9, 0.9); this.crow.draw(c); c.restore();
+        if (this.crow.cloneCrowT > 0 && this.crow.posHistory.length > 0) {
+            /* 0.3秒遅延位置に分身を描画（本体との差分オフセット） */
+            const dx = this.crow.cloneX - this.crow.x;
+            const dy = this.crow.cloneY - this.crow.y;
+            /* 残り時間が少なくなったらフェードアウト（最後3秒で点滅） */
+            const t = this.crow.cloneCrowT;
+            const alpha = t < 180 ? (t % 20 < 10 ? 0.3 : 0.55) : 0.55;
+            c.save(); c.globalAlpha = alpha; c.translate(dx, dy); c.scale(0.9, 0.9); this.crow.draw(c); c.restore();
         }
         this.flockCrows.forEach(fc => {
             if (!fc.active) return;
