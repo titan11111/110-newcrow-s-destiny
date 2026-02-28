@@ -17,10 +17,10 @@ function setupTouch(game) {
     /** 打感: 振動（Android）＋タップ時クラス（iOS含む）で押下感を出す */
     const tapFeedback = (el) => {
         if (!el) return;
-        try { navigator.vibrate?.(20); } catch (_) {}
+        try { navigator.vibrate?.([35]); } catch (_) {}
         el.classList.add('tap-press');
         clearTimeout(el._tapPressT);
-        el._tapPressT = setTimeout(() => { el.classList.remove('tap-press'); }, 120);
+        el._tapPressT = setTimeout(() => { el.classList.remove('tap-press'); }, 140);
     };
     const bind = (id, key) => {
         const el = document.getElementById(id);
@@ -48,33 +48,56 @@ function setupTouch(game) {
     bind('btn-dash', 'TouchDash');
     bind('btn-start', 'TouchStart');
 
-    /* スキルボタン: 短押し＝取得済みスキルを順に切替、長押し(250ms以上)＝選択中スキル発動 */
+    /* スキルボタン: 短押し＝切替、長押し(200ms以上)＝発動
+       iOS対策:
+       - pointerleave を除去（わずかなずれで誤爆するため）
+       - pointerdown/touchstart 両方でdown()が呼ばれても skillDownAt を上書きするだけ
+       - fired フラグで pointerup + touchend の二重発火を防止
+       - 長押し中はボタン色を変えてフィードバック
+       - 発動時は短い連続振動でスキル発動感を演出 */
     const btnSkill = document.getElementById('btn-skill');
     if (btnSkill) {
         let skillDownAt = 0;
-        const LONG_PRESS_MS = 250;
+        let skillFired = false;
+        const LONG_PRESS_MS = 200;
         const down = (e) => {
             e.preventDefault();
             e.stopPropagation();
             tapFeedback(btnSkill);
             skillDownAt = Date.now();
+            skillFired = false;
+            /* 長押し中: ボタン枠を明るく光らせてチャージ中を示す */
+            btnSkill.style.borderColor = '#dd66ff';
+            btnSkill.style.boxShadow = '0 0 10px rgba(200,80,255,0.6)';
         };
         const up = (e) => {
-            e.preventDefault();
+            if (skillFired) return;
+            skillFired = true;
+            e?.preventDefault?.();
+            /* 長押し中のスタイルをリセット */
+            btnSkill.style.borderColor = '';
+            btnSkill.style.boxShadow = '';
             const duration = Date.now() - skillDownAt;
             if (duration >= LONG_PRESS_MS) {
                 game.keys['TouchSkillFire'] = true;
+                /* 発動: 短い2段振動でスキル発射感 */
+                try { navigator.vibrate?.([20, 10, 40]); } catch (_) {}
             } else {
                 game.keys['TouchSkillCycle'] = true;
             }
         };
+        const cancel = () => {
+            skillFired = true;
+            btnSkill.style.borderColor = '';
+            btnSkill.style.boxShadow = '';
+        };
         btnSkill.addEventListener('pointerdown', down, { passive: false });
         btnSkill.addEventListener('pointerup', up);
-        btnSkill.addEventListener('pointerleave', up);
-        btnSkill.addEventListener('pointercancel', up);
+        /* pointerleave は登録しない（iOS タッチで誤爆するため） */
+        btnSkill.addEventListener('pointercancel', cancel);
         btnSkill.addEventListener('touchstart', down, { passive: false });
         btnSkill.addEventListener('touchend', (e) => { e.preventDefault(); up(e); }, { passive: false });
-        btnSkill.addEventListener('touchcancel', up);
+        btnSkill.addEventListener('touchcancel', cancel);
         btnSkill.addEventListener('contextmenu', (e) => e.preventDefault());
     }
 
