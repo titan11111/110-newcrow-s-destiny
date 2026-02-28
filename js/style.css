@@ -1,0 +1,256 @@
+/* ============================================================
+   CROW'S DESTINY — フルスクリーンオーバーレイ型 iOS最適化版
+   ============================================================ */
+*{margin:0;padding:0;box-sizing:border-box}
+*{touch-action:manipulation}
+body{
+    -webkit-user-select:none;user-select:none;
+    -webkit-touch-callout:none;overscroll-behavior:none;
+    -ms-touch-action:manipulation;touch-action:manipulation;
+}
+html,body{
+    overflow:hidden;position:fixed;width:100%;height:100%;
+    overscroll-behavior-y:none;-webkit-overflow-scrolling:auto;
+}
+html{touch-action:manipulation;}
+body{
+    background:#0a0510;color:#e0cda7;font-family:'Georgia',serif;
+    display:flex;justify-content:center;align-items:center;
+    min-height:100vh;min-height:100dvh;
+}
+
+/* =============================================
+   ゲームコンテナ: フルスクリーン・相対配置の親
+   ============================================= */
+#game-container{
+    position:relative;
+    width:100%;
+    height:100dvh;max-height:100dvh;
+    box-sizing:border-box;
+    overflow:hidden;
+    /* iOS Safe Area */
+    padding-top:env(safe-area-inset-top,0);
+    padding-bottom:env(safe-area-inset-bottom,0);
+    padding-left:env(safe-area-inset-left,0);
+    padding-right:env(safe-area-inset-right,0);
+}
+
+/* =============================================
+   キャンバス: 親コンテナを100%埋める
+   ============================================= */
+#gameCanvas{
+    position:absolute;
+    top:0;left:0;
+    width:100%;height:100%;
+    object-fit:contain;
+    image-rendering:pixelated;
+    image-rendering:crisp-edges;
+    display:block;
+    z-index:1;
+}
+
+/* =============================================
+   ローディング画面
+   ============================================= */
+#loading-screen{
+    position:absolute;top:0;left:0;right:0;bottom:0;
+    background:#000;display:flex;flex-direction:column;
+    justify-content:center;align-items:center;
+    z-index:100;transition:opacity 1.5s;pointer-events:auto;
+}
+#loading-screen h1{color:#ff4d00;letter-spacing:6px;font-size:clamp(14px,4vw,20px)}
+.altar-light{
+    width:220px;height:2px;background:#ff4d00;
+    box-shadow:0 0 25px #ff4d00;animation:flicker .1s infinite;
+}
+@keyframes flicker{0%{opacity:.8}50%{opacity:1}100%{opacity:.8}}
+
+/* =============================================
+   左下: ジョイスティックゾーン（タッチ捕捉エリア）
+   ============================================= */
+#joystick-zone{
+    position:absolute;
+    bottom:0;left:0;
+    width:44%;
+    height:46%;
+    z-index:10;
+    /* デバッグ用: background:rgba(255,0,0,0.05); */
+}
+#joystick-base{
+    /* _positionHTMLJoystick で left/top を動的設定 */
+    width:160px;height:160px;
+    background:rgba(40,30,20,0.32);
+    border:2px solid rgba(200,170,130,0.4);
+    border-radius:50%;
+    position:absolute;
+    opacity:0;
+    transition:opacity 0.1s;
+    box-shadow:0 0 24px rgba(180,140,80,0.12);
+    pointer-events:none;
+}
+#joystick-stick{
+    width:70px;height:70px;
+    background:radial-gradient(circle at 35% 35%, rgba(230,200,150,0.95), rgba(180,145,100,0.85));
+    border-radius:50%;
+    position:absolute;
+    pointer-events:none;
+    box-shadow:0 4px 14px rgba(0,0,0,0.55), inset 0 2px 4px rgba(255,230,180,0.3);
+}
+
+/* =============================================
+   右下: DASH・SKILL 丸ボタン（ゲームボーイスタイル）
+   ============================================= */
+#action-buttons{
+    position:absolute;
+    right:max(18px, env(safe-area-inset-right,18px));
+    bottom:max(18px, env(safe-area-inset-bottom,18px));
+    width:168px;
+    height:150px;
+    z-index:10;
+    pointer-events:none;
+}
+#action-buttons button{
+    position:absolute;
+    pointer-events:auto;
+    border-radius:50%;
+    border:none;
+    font-family:inherit;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+    -webkit-touch-callout:none;
+    touch-action:manipulation;
+    -webkit-user-select:none;user-select:none;
+    display:flex;align-items:center;justify-content:center;
+    transition:transform .04s, opacity .04s, box-shadow .04s;
+}
+/* SKILLボタン: 大・右上・紫（Aボタン相当） */
+#btn-skill{
+    width:76px;height:76px;
+    right:0;bottom:62px;
+    background:radial-gradient(circle at 38% 35%, rgba(140,70,180,0.92), rgba(80,30,110,0.88));
+    box-shadow:0 0 18px rgba(155,89,214,0.5), 0 4px 10px rgba(0,0,0,0.5);
+    border:2px solid rgba(155,89,214,0.7);
+    color:#cc88ff;
+    font-size:11px;
+    font-weight:bold;
+    white-space:pre-line;
+    line-height:1.25;
+    text-align:center;
+}
+/* DASHボタン: 中・左下・青（Bボタン相当） */
+#btn-dash{
+    width:64px;height:64px;
+    right:88px;bottom:14px;
+    background:radial-gradient(circle at 38% 35%, rgba(60,100,180,0.90), rgba(20,50,120,0.86));
+    box-shadow:0 0 14px rgba(102,136,204,0.45), 0 4px 10px rgba(0,0,0,0.5);
+    border:2px solid rgba(102,136,204,0.65);
+    color:#aaddff;
+    font-size:12px;
+    font-weight:bold;
+}
+/* 押下フィードバック */
+#action-buttons button:active,
+#action-buttons button.tap-press{
+    transform:scale(.84);
+    opacity:.95;
+}
+#btn-skill:active,#btn-skill.tap-press{
+    box-shadow:0 0 28px rgba(200,100,255,0.7), 0 2px 6px rgba(0,0,0,0.5);
+}
+#btn-dash:active,#btn-dash.tap-press{
+    box-shadow:0 0 22px rgba(100,160,255,0.65), 0 2px 6px rgba(0,0,0,0.5);
+}
+/* チャージ中（長押し）のSKILLボタン */
+#btn-skill.charging{
+    border-color:#ee88ff;
+    box-shadow:0 0 32px rgba(220,100,255,0.85), 0 0 16px rgba(200,80,255,0.5), inset 0 0 12px rgba(180,60,240,0.3);
+    transition:box-shadow .06s;
+}
+
+/* =============================================
+   下中央: START・PAUSE 小型横長ボタン
+   ============================================= */
+#center-buttons{
+    position:absolute;
+    bottom:max(16px, env(safe-area-inset-bottom,16px));
+    left:50%;
+    transform:translateX(-50%);
+    display:flex;
+    gap:14px;
+    z-index:10;
+}
+#center-buttons button{
+    height:26px;
+    padding:0 18px;
+    border-radius:13px;
+    font-size:11px;
+    font-family:inherit;
+    font-weight:bold;
+    letter-spacing:1px;
+    background:rgba(20,14,30,0.72);
+    border:1px solid rgba(200,175,140,0.28);
+    color:rgba(200,175,140,0.65);
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+    touch-action:manipulation;
+    transition:transform .04s, background .06s;
+}
+#center-buttons button:active{
+    transform:scale(.92);
+    background:rgba(60,40,80,0.8);
+    color:rgba(220,200,160,0.9);
+}
+
+/* =============================================
+   縦向き「横にしてください」オーバーレイ
+   ============================================= */
+.portrait-message{
+    display:none;position:fixed;inset:0;z-index:9999;
+    background:rgba(10,5,16,0.95);
+    align-items:center;justify-content:center;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.portrait-message.is-visible{display:flex;}
+.portrait-message p{
+    font-family:Cinzel,Georgia,serif;
+    font-size:clamp(20px,5vw,28px);
+    color:#e0cda7;text-align:center;margin:0;
+}
+
+/* =============================================
+   ジョイスティック設定オーバーレイ
+   ============================================= */
+.settings-overlay{
+    display:none;position:fixed;inset:0;z-index:2000;
+    background:rgba(0,0,0,0.85);
+    align-items:center;justify-content:center;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.settings-overlay.is-open{display:flex}
+.settings-panel{
+    background:rgba(30,22,18,0.98);
+    border:2px solid #4a3528;border-radius:16px;padding:24px;
+    max-width:90vw;width:360px;
+    -webkit-tap-highlight-color:transparent;
+}
+.settings-title{font-size:16px;color:#e0cda7;margin:16px 0 8px;font-family:Georgia,serif;}
+.settings-title:first-child{margin-top:0}
+.settings-row{display:flex;align-items:center;gap:12px;}
+.settings-row input[type=range]{flex:1;min-width:0;accent-color:#ff4d00}
+.settings-label{font-size:12px;color:#aa8866;min-width:2.2em}
+.settings-value{font-size:14px;color:#c9b896;margin:4px 0}
+.settings-test-area{
+    margin:20px 0;min-height:100px;
+    background:rgba(0,0,0,0.4);border:2px dashed #4a3528;border-radius:12px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    touch-action:none;
+}
+.settings-test-label{font-size:13px;color:#8a7a5c;margin-bottom:8px}
+.settings-test-out{font-size:18px;color:#e0cda7;font-family:monospace}
+.settings-back{
+    display:block;width:100%;margin-top:16px;padding:14px;
+    font-size:18px;font-family:Georgia,serif;color:#e0cda7;
+    background:rgba(61,43,31,0.9);border:2px solid #4a3528;
+    border-radius:12px;cursor:pointer;-webkit-tap-highlight-color:transparent;
+}
+.settings-back:active{transform:scale(0.98);opacity:0.9}
