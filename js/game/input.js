@@ -66,17 +66,14 @@ function setupTouch(game) {
             tapFeedback(btnSkill);
             skillDownAt = Date.now();
             skillFired = false;
-            /* 長押し中: ボタン枠を明るく光らせてチャージ中を示す */
-            btnSkill.style.borderColor = '#dd66ff';
-            btnSkill.style.boxShadow = '0 0 10px rgba(200,80,255,0.6)';
+            /* 長押し中: charging クラスで丸ボタンを発光させる */
+            btnSkill.classList.add('charging');
         };
         const up = (e) => {
             if (skillFired) return;
             skillFired = true;
             e?.preventDefault?.();
-            /* 長押し中のスタイルをリセット */
-            btnSkill.style.borderColor = '';
-            btnSkill.style.boxShadow = '';
+            btnSkill.classList.remove('charging');
             const duration = Date.now() - skillDownAt;
             if (duration >= LONG_PRESS_MS) {
                 game.keys['TouchSkillFire'] = true;
@@ -88,8 +85,7 @@ function setupTouch(game) {
         };
         const cancel = () => {
             skillFired = true;
-            btnSkill.style.borderColor = '';
-            btnSkill.style.boxShadow = '';
+            btnSkill.classList.remove('charging');
         };
         btnSkill.addEventListener('pointerdown', down, { passive: false });
         btnSkill.addEventListener('pointerup', up);
