@@ -77,7 +77,15 @@ class Game {
             this.keys['JoystickX'] = fx;
             this.keys['JoystickY'] = fy;
         });
-        this.joystick.setup();
+        /* タッチデバイス(iOS/Android)では左パネルHTMLジョイスティックを使用 */
+        const isTouch = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+        if (isTouch) document.body.classList.add('touch-device');
+        const joystickZone = document.getElementById('joystick-zone');
+        if (joystickZone && isTouch) {
+            this.joystick.setupHTMLMode(joystickZone);
+        } else {
+            this.joystick.setup(); /* PC: キャンバス上フローティング */
+        }
         setupJoystickSettingsUI(this);
 
         window.addEventListener('keydown', e => {
@@ -222,8 +230,8 @@ class Game {
         const W = CFG.W;
         const H = CFG.H;
         if (idx === 0) {
-            /* 紫スキル: ホーミング誘導剣を3本扇状に発射（上・中・下） */
-            const swordOffsets = [{ yo: -12, vy: -0.5 }, { yo: 0, vy: 0 }, { yo: 12, vy: 0.5 }];
+            /* 紫スキル: 3本の剣を平行に真っ直ぐ発射（上・中・下 vy=0） */
+            const swordOffsets = [{ yo: -14, vy: 0 }, { yo: 0, vy: 0 }, { yo: 14, vy: 0 }];
             for (const s of swordOffsets) {
                 cr.feathers.push({ x: cx, y: cy + s.yo, vx: cr.facing * 16, vy: s.vy, active: true, life: 0, isBeam: true, color: '#9B59D6', isPurpleSword: true });
             }
