@@ -158,6 +158,28 @@ class Game {
         this.fx.burst(r.x, r.y, r.type.color, 18, 4);
     }
 
+    /** iOS スキルボタンのテキストを現在のスキル状態に合わせて更新 */
+    _updateSkillButton() {
+        const btn = document.getElementById('btn-skill');
+        if (!btn) return;
+        const cr = this.crow;
+        if (!cr || !cr.unlockedBossAbilities) { btn.textContent = 'スキル'; return; }
+        const unlockedIndices = [0,1,2,3,4,5,6].filter(i => cr.unlockedBossAbilities[i]);
+        const nUnlocked = unlockedIndices.length;
+        if (nUnlocked === 0) { btn.textContent = 'スキル'; return; }
+        const slotIdx = Math.min(cr.currentSkillSlotIndex ?? 0, nUnlocked - 1);
+        const currentBossIdx = unlockedIndices[slotIdx]; // 0始まりのボス番号
+        const cd = (cr.bossAbilityCD && cr.bossAbilityCD[currentBossIdx]) || 0;
+        const cdSec = cd > 0 ? Math.ceil(cd / 60) : 0;
+        if (cdSec > 0) {
+            btn.textContent = `スキル ${slotIdx + 1}/${nUnlocked}\nCD:${cdSec}s`;
+            btn.style.color = '#888';
+        } else {
+            btn.textContent = `スキル ${slotIdx + 1}/${nUnlocked}`;
+            btn.style.color = '#cc88ff';
+        }
+    }
+
     /** スキル: タップで取得済みスキルを順に切替、長押し/Zキーで選択中スキル発動。Cキーで切替。1〜7キーは従来どおりその面のスキルを直接発動。 */
     tryTriggerBossAbility() {
         const cr = this.crow;
@@ -342,7 +364,7 @@ class Game {
             return;
         }
         if (this.state === STATE.PLAYING) {
-            this.crow.update(this.keys); this.tryTriggerBossAbility(); spawnEnemies(this); spawnObstacles(this);
+            this.crow.update(this.keys); this.tryTriggerBossAbility(); this._updateSkillButton(); spawnEnemies(this); spawnObstacles(this);
             const ss = this.scrollSpd; this.enemies.forEach(e => e.update(this.crow.cx, this.crow.cy, this.eBullets, ss, this.fx));
             updateSpecialBullets(this.eBullets);
             if (processBulletSplits) processBulletSplits(this.eBullets);
@@ -395,7 +417,7 @@ class Game {
             if (this.boss && this.boss.idx === 3 && this.boss.mirrorActiveT > 0) {
                 keys = { ...this.keys, ArrowLeft: this.keys['ArrowRight'], ArrowRight: this.keys['ArrowLeft'], KeyA: this.keys['KeyD'], KeyD: this.keys['KeyA'], TouchLeft: this.keys['TouchRight'], TouchRight: this.keys['TouchLeft'] };
             }
-            this.crow.update(keys); this.tryTriggerBossAbility();
+            this.crow.update(keys); this.tryTriggerBossAbility(); this._updateSkillButton();
             this._updateFeathersAndSkills();
             this.flockCrows.forEach(fc => { fc.x += fc.vx; if (fc.x > CFG.W + 60) fc.active = false; });
             this.snowParticles.forEach(s => { s.x += s.vx; s.y += s.vy; s.life++; if (s.life > (s.maxLife || 120) || s.x < -20 || s.x > CFG.W + 20 || s.y < -20 || s.y > CFG.H + 20) s.active = false; });
