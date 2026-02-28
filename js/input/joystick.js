@@ -7,9 +7,13 @@
 
 const CFG = global.CrowDestiny && global.CrowDestiny.CFG;
 
-const JOYSTICK_MAX_RADIUS = 60;
-const JOYSTICK_BASE_RADIUS = 52;
-const JOYSTICK_KNOB_RADIUS = 22;
+/* 2.0倍サイズ（一回り大きく、iOS親指でより操作しやすく） */
+const JOYSTICK_SCALE = 2.0;
+const JOYSTICK_MAX_RADIUS = 60 * JOYSTICK_SCALE;   /* 120 */
+const JOYSTICK_BASE_RADIUS = 52 * JOYSTICK_SCALE;  /* 104 */
+const JOYSTICK_KNOB_RADIUS = 22 * JOYSTICK_SCALE;  /* 44 */
+/** ジョイスティック出現ゾーン：キャンバス幅の左側この割合まで（0.9＝左90%。右端10%はボタン用）。左親指が届きやすいよう広めに取る */
+const JOYSTICK_LEFT_ZONE_RATIO = 0.9;
 const JOYSTICK_ALPHA_IDLE = 0.45;
 const JOYSTICK_ALPHA_ACTIVE = 0.75;
 const JOYSTICK_FADE_FRAMES = 9;
@@ -83,11 +87,13 @@ class VirtualJoystick {
 
     handleTouchStart(e) {
         for (const touch of e.changedTouches) {
-            /* 画面のどこをタッチしてもジョイスティックがその位置に出現 */
             if (this.joystickTouchId === null) {
+                const pos = this.getCanvasCoords(touch.clientX, touch.clientY);
+                /* 左側ゾーン（幅の90%）内のタッチのみジョイスティック出現。右端10%はボタン用。左親指が届きやすいよう広めに取る */
+                const leftZoneLimit = this.canvas.width * JOYSTICK_LEFT_ZONE_RATIO;
+                if (pos.x > leftZoneLimit) continue;
                 e.preventDefault();
                 this.joystickTouchId = touch.identifier;
-                const pos = this.getCanvasCoords(touch.clientX, touch.clientY);
                 this.stickOrigin = { x: pos.x, y: pos.y };
                 this.knobPos = { x: pos.x, y: pos.y };
                 this.rawInputX = 0;
