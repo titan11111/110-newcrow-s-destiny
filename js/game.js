@@ -38,6 +38,8 @@ const drawLastBoss2To3CutsceneScene = global.CrowDestiny.drawLastBoss2To3Cutscen
 const drawPauseOverlay = global.CrowDestiny.drawPauseOverlay;
 const createGameBulletPool = global.CrowDestiny.createGameBulletPool;
 const updateSpecialBullets = global.CrowDestiny.updateSpecialBullets;
+const processBulletSplits = global.CrowDestiny.processBulletSplits;
+const processExplosiveBullets = global.CrowDestiny.processExplosiveBullets;
 
 class Game {
     constructor() {
@@ -61,6 +63,8 @@ class Game {
         this.bulletPool = bulletState.pool;
         this.eBullets = bulletState.adapter;
         this.enemies = []; this.relics = []; this.obstacles = [];
+        this.flockCrows = [];
+        this.snowParticles = [];
         this.boss = null; this.score = 0; this.frame = 0;
         this.stageIdx = 0; this.blueK = 0; this.blueCD = 0; this.eCD = 0;
         this.stateT = 0; this.fadeA = 0; this.fadeD = 0; this.slowT = 0; this.arena = false; this.obsCD = 0;
@@ -126,6 +130,7 @@ class Game {
         this.sound.stopBGM();
         this.state = STATE.NARRATION; this.stateT = 0;
         this.enemies = []; this.bulletPool.releaseAll(); this.relics = []; this.obstacles = [];
+        this.flockCrows = []; this.snowParticles = [];
         this.boss = null; this.blueK = 0; this.blueCD = ri(180, 320); this.eCD = 0; this.arena = false; this.obsCD = ri(60, 120);
         this.bg.scrolling = true; this.bg.setStage(this.sd); this.fadeA = 0; this.fadeD = 0; this.slowT = 0;
         // ステージ移行時はHPを全回復（1面で瀕死クリア→2面開始で即ゲームオーバーになるのを防ぐ）
@@ -134,7 +139,7 @@ class Game {
 
     restart() {
         this.sound.stopBGM();
-        this.crow = new Crow(this.sound); this.enemies = []; this.bulletPool.releaseAll(); this.relics = []; this.obstacles = []; this.boss = null;
+        this.crow = new Crow(this.sound); this.enemies = []; this.bulletPool.releaseAll(); this.relics = []; this.obstacles = []; this.flockCrows = []; this.snowParticles = []; this.boss = null;
         this.score = 0; this.frame = 0; this.stageIdx = 0; this.fx = new FX(this); this.txt = new TextOverlay(); this.efx = new EffectOverlay();
         this.bg = new Background(); this.state = STATE.TITLE; this.stateT = 0; this.fadeA = 0; this.slowT = 0; this._lastBossBGMForm = -1; this.lastBossForm = undefined;
     }
@@ -192,35 +197,90 @@ class Game {
         if (this.sound.playItem) this.sound.playItem();
         const cx = cr.x + cr.w / 2 + cr.facing * 12;
         const cy = cr.y + cr.h / 2 - 3;
+        const W = CFG.W;
+        const H = CFG.H;
         if (idx === 0) {
-            cr.feathers.push({ x: cx, y: cy, vx: cr.facing * 20, vy: 0, active: true, life: 0, isBeam: true, color: '#9B59B6' });
-            this.fx.burst(cx, cy, '#9B59B6', 12, 4);
+            cr.feathers.push({ x: cx, y: cy, vx: cr.facing * 14, vy: 0, active: true, life: 0, isBeam: true, color: '#9B59D6', isPurpleSword: true });
+            this.fx.burst(cx, cy, '#9B59D6', 12, 4);
         } else if (idx === 1) {
-            cr.barrier = Math.max(cr.barrier, 60); this.efx.add("BARRIER", "#00ffaa", 40);
+            const spd = 16;
+            for (const a of [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4]) {
+                cr.feathers.push({ x: cx, y: cy, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, life: 0, isBeam: true, color: '#2ECC71' });
+            }
+            this.fx.burst(cx, cy, '#2ECC71', 14, 4);
         } else if (idx === 2) {
-            for (let i = 0; i < 3; i++) {
-                const spread = (Math.random() - 0.5) * 0.5;
-                cr.feathers.push({ x: cx, y: cy, vx: cr.facing * 14 * Math.cos(spread), vy: Math.sin(spread) * 14, active: true, life: 0, color: '#7B00FF' });
-            }
-            this.fx.burst(cx, cy, '#7B00FF', 10, 3);
+            cr.cloneCrowT = 30 * 60;
+            this.efx.add("CLONE", "#95a5a6", 60);
+            this.fx.burst(cx, cy, '#7F8C8D', 16, 5);
         } else if (idx === 3) {
-            for (let i = -2; i <= 2; i++) {
-                const a = i * 0.2; const spd = 12;
-                cr.feathers.push({ x: cx, y: cy, vx: cr.facing * Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, life: 0, color: '#ff6644' });
+            const baseY = cr.y + cr.h / 2;
+            for (let row = 0; row < 2; row++) {
+                for (let col = 0; col < 3; col++) {
+                    this.flockCrows.push({
+                        x: cr.x - 40 - col * 25,
+                        y: baseY - 20 + row * 28 + (col % 2) * 8,
+                        vx: 18,
+                        vy: 0,
+                        active: true,
+                        damage: 12
+                    });
+                }
             }
-            this.fx.burst(cx, cy, '#ff6644', 14, 4);
+            this.fx.burst(cx, cy, '#E74C3C', 18, 5);
         } else if (idx === 4) {
-            cr.barrier = Math.max(cr.barrier, 90); this.efx.add("BARRIER", "#00dddd", 50);
+            cr.barrier = Math.max(cr.barrier, 20 * 60);
+            this.efx.add("BARRIER", "#3498DB", 80);
+            this.fx.burst(cx, cy, '#3498DB', 20, 6);
         } else if (idx === 5) {
-            cr.feathers.push({ x: cx, y: cy, vx: cr.facing * 18, vy: 0, active: true, life: 0, isBeam: true, color: '#AED6F1' });
-            this.fx.burst(cx, cy, '#AED6F1', 12, 4);
-        } else if (idx === 6) {
-            const n = 12; for (let i = 0; i < n; i++) {
-                const a = (Math.PI * 2 / n) * i; const spd = 10;
-                cr.feathers.push({ x: cx, y: cy, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, life: 0, color: '#ff00ff' });
+            for (let i = 0; i < 80; i++) {
+                this.snowParticles.push({
+                    x: Math.random() * (W + 100) - 50,
+                    y: Math.random() * (H + 50) - 25,
+                    vx: (Math.random() - 0.5) * 8,
+                    vy: (Math.random() - 0.5) * 6,
+                    active: true,
+                    life: 0,
+                    maxLife: 120,
+                    damage: 3
+                });
             }
-            this.fx.burst(cx, cy, '#ff00ff', 16, 5);
+            this.fx.burst(cx, cy, '#ECF0F1', 25, 8);
         }
+    }
+
+    _updateFeathersAndSkills() {
+        const cr = this.crow;
+        const W = CFG.W;
+        const H = CFG.H;
+        cr.feathers.forEach(f => {
+            f.x += f.vx;
+            f.y += f.vy;
+            f.life++;
+            if (f.x < -30 || f.x > W + 30 || f.y < -30 || f.y > H + 30) f.active = false;
+            if (f.isPurpleSword && f.active) {
+                let tx = f.x + f.vx * 30;
+                let ty = f.y + f.vy * 30;
+                let best = Infinity;
+                this.enemies.forEach(e => {
+                    if (!e.active || e.anim.state === 'DEATH') return;
+                    const d2 = (e.x - f.x) ** 2 + (e.y - f.y) ** 2;
+                    if (d2 < best) { best = d2; tx = e.x + (e.w || 20) / 2; ty = e.y + (e.h || 16) / 2; }
+                });
+                if (this.boss && this.boss.active && this.boss.arrived) {
+                    const d2 = (this.boss.x - f.x) ** 2 + (this.boss.y - f.y) ** 2;
+                    if (d2 < best) { tx = this.boss.x; ty = this.boss.y; }
+                }
+                const dx = tx - f.x;
+                const dy = ty - f.y;
+                const dist = Math.hypot(dx, dy) || 1;
+                const spd = 14;
+                const turn = 0.08;
+                f.vx += (dx / dist * spd - f.vx) * turn;
+                f.vy += (dy / dist * spd - f.vy) * turn;
+                const s = Math.hypot(f.vx, f.vy);
+                if (s > 0.5) { f.vx *= spd / s; f.vy *= spd / s; }
+            }
+        });
     }
 
     triggerBoss() {
@@ -285,9 +345,14 @@ class Game {
             this.crow.update(this.keys); this.tryTriggerBossAbility(); spawnEnemies(this); spawnObstacles(this);
             const ss = this.scrollSpd; this.enemies.forEach(e => e.update(this.crow.cx, this.crow.cy, this.eBullets, ss, this.fx));
             updateSpecialBullets(this.eBullets);
+            if (processBulletSplits) processBulletSplits(this.eBullets);
             this.eBullets.forEach(b => { b.x += b.vx; b.y += b.vy; if (b.x < -30 || b.x > CFG.W + 30 || b.y < -30 || b.y > CFG.H + 30) b.active = false; });
+            if (processExplosiveBullets) processExplosiveBullets(this.eBullets, this);
+            this._updateFeathersAndSkills();
+            this.flockCrows.forEach(fc => { fc.x += fc.vx; if (fc.x > CFG.W + 60) fc.active = false; });
+            this.snowParticles.forEach(s => { s.x += s.vx; s.y += s.vy; s.life++; if (s.life > (s.maxLife || 120) || s.x < -20 || s.x > CFG.W + 20 || s.y < -20 || s.y > CFG.H + 20) s.active = false; });
             this.relics.forEach(r => r.update(ss)); this.obstacles.forEach(o => o.update(ss)); checkCollisions(this);
-            this.enemies = this.enemies.filter(e => e.active); this.crow.feathers = this.crow.feathers.filter(f => f.active); this.bulletPool.releaseInactive(); this.relics = this.relics.filter(r => r.active); this.obstacles = this.obstacles.filter(o => o.active);
+            this.enemies = this.enemies.filter(e => e.active); this.crow.feathers = this.crow.feathers.filter(f => f.active); this.flockCrows = this.flockCrows.filter(fc => fc.active); this.snowParticles = this.snowParticles.filter(s => s.active); this.bulletPool.releaseInactive(); this.relics = this.relics.filter(r => r.active); this.obstacles = this.obstacles.filter(o => o.active);
             if (this.crow.hp <= 0) { this.state = STATE.GAME_OVER; this.stateT = 0; this.sound.stopBGM(); this.sound.playGameOver(); this.sound.playBGM('gameover'); return; }
             if (this.blueK >= 3) this.triggerBoss();
             return;
@@ -331,6 +396,9 @@ class Game {
                 keys = { ...this.keys, ArrowLeft: this.keys['ArrowRight'], ArrowRight: this.keys['ArrowLeft'], KeyA: this.keys['KeyD'], KeyD: this.keys['KeyA'], TouchLeft: this.keys['TouchRight'], TouchRight: this.keys['TouchLeft'] };
             }
             this.crow.update(keys); this.tryTriggerBossAbility();
+            this._updateFeathersAndSkills();
+            this.flockCrows.forEach(fc => { fc.x += fc.vx; if (fc.x > CFG.W + 60) fc.active = false; });
+            this.snowParticles.forEach(s => { s.x += s.vx; s.y += s.vy; s.life++; if (s.life > (s.maxLife || 120) || s.x < -20 || s.x > CFG.W + 20 || s.y < -20 || s.y > CFG.H + 20) s.active = false; });
             if (this.boss && this.boss.idx === 3) {
                 this.playerPathHistory.push({ x: this.crow.cx, y: this.crow.cy });
                 if (this.playerPathHistory.length > 180) this.playerPathHistory.shift();
@@ -348,6 +416,7 @@ class Game {
             }
             this.enemies.forEach(e => e.update(this.crow.cx, this.crow.cy, this.eBullets, 0, this.fx));
             updateSpecialBullets(this.eBullets);
+            if (processBulletSplits) processBulletSplits(this.eBullets);
             this.eBullets.forEach(b => {
                 if (b.homing) {
                     const dx = this.crow.cx - b.x; const dy = this.crow.cy - b.y; const d = Math.hypot(dx, dy) || 1;
@@ -360,7 +429,8 @@ class Game {
                 b.x += b.vx; b.y += b.vy;
                 if (b.x < -30 || b.x > CFG.W + 30 || b.y < -30 || b.y > CFG.H + 30) b.active = false;
             });
-            this.relics.forEach(r => r.update(0)); checkCollisions(this); this.enemies = this.enemies.filter(e => e.active); this.crow.feathers = this.crow.feathers.filter(f => f.active); this.bulletPool.releaseInactive(); this.relics = this.relics.filter(r => r.active);
+            if (processExplosiveBullets) processExplosiveBullets(this.eBullets, this);
+            this.relics.forEach(r => r.update(0)); checkCollisions(this); this.enemies = this.enemies.filter(e => e.active); this.crow.feathers = this.crow.feathers.filter(f => f.active); this.flockCrows = this.flockCrows.filter(fc => fc.active); this.snowParticles = this.snowParticles.filter(s => s.active); this.bulletPool.releaseInactive(); this.relics = this.relics.filter(r => r.active);
             if (this.crow.hp <= 0) { this.state = STATE.GAME_OVER; this.stateT = 0; this.sound.stopBGM(); this.sound.playGameOver(); this.sound.playBGM('gameover'); return; }
             if (this.boss && !this.boss.active && this.boss.anim && this.boss.anim.done) {
                 if (this.stageIdx === 6 && this.lastBossForm !== undefined && this.lastBossForm < 2) {
@@ -409,7 +479,18 @@ class Game {
         if (mirror) { c.save(); c.translate(CFG.W, 0); c.scale(-1, 1); c.translate(-CFG.W, 0); }
         this.obstacles.forEach(o => o.draw(c)); this.relics.forEach(r => r.draw(c)); this.enemies.forEach(e => e.draw(c));
         this.eBullets.forEach(b => { if (!b.active) return; c.save(); c.globalAlpha = 0.85; c.fillStyle = b.color; c.beginPath(); c.arc(b.x, b.y, b.r || 5, 0, Math.PI * 2); c.fill(); c.globalAlpha = 0.3; c.beginPath(); c.arc(b.x, b.y, (b.r || 5) + 4, 0, Math.PI * 2); c.fill(); c.restore(); });
-        this.crow.drawFeathers(c); this.crow.drawTrail(c); this.crow.draw(c); if (this.boss) this.boss.draw(c); this.fx.draw(c); this.fx.drawArenaEffects(c); this.fx.drawFlash(c); this.efx.draw(c, this.crow);
+        this.crow.drawFeathers(c); this.crow.drawTrail(c);
+        if (this.crow.cloneCrowT > 0) {
+            c.save(); c.globalAlpha = 0.55; c.translate(28, 0); c.scale(0.9, 0.9); this.crow.draw(c); c.restore();
+        }
+        this.flockCrows.forEach(fc => {
+            c.save(); c.fillStyle = '#E74C3C'; c.shadowColor = '#E74C3C'; c.shadowBlur = 6; c.beginPath(); c.arc(fc.x, fc.y, 10, 0, Math.PI * 2); c.fill(); c.shadowBlur = 0; c.strokeStyle = '#ff8866'; c.lineWidth = 2; c.stroke(); c.restore();
+        });
+        this.snowParticles.forEach(s => {
+            if (!s.active) return;
+            c.save(); c.fillStyle = 'rgba(255,255,255,' + (0.4 + 0.4 * (1 - s.life / (s.maxLife || 120))) + ')'; c.beginPath(); c.arc(s.x, s.y, 3, 0, Math.PI * 2); c.fill(); c.restore();
+        });
+        this.crow.draw(c); if (this.boss) this.boss.draw(c); this.fx.draw(c); this.fx.drawArenaEffects(c); this.fx.drawFlash(c); this.efx.draw(c, this.crow);
         if (mirror) c.restore();
         if (this.boss && this.boss.idx === 3 && this.boss.berserk) {
             c.save(); c.globalAlpha = 0.6 + Math.sin(this.frame * 0.3) * 0.2; c.fillStyle = '#FF00FF'; c.font = 'bold 28px monospace'; c.textAlign = 'center';
