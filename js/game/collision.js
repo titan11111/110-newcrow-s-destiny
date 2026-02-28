@@ -86,6 +86,70 @@ function checkCollisions(game) {
         }
     }
 
+    // 群れカラス（赤スキル）→ 敵・ボス
+    const flockR = 28;
+    const flockR2 = flockR * flockR;
+    const flockCrows = game.flockCrows || [];
+    for (const fc of flockCrows) {
+        if (!fc.active) continue;
+        for (const en of enemies) {
+            if (!en.active || en.anim.state === 'DEATH') continue;
+            if (distSquared(fc.x, fc.y, en.x + (en.w || 20) / 2, en.y + (en.h || 16) / 2) < flockR2) {
+                en.takeDamage(fc.damage || 12, fx);
+                sound.playHit();
+                fc.active = false;
+                if (en.hp <= 0) {
+                    game.score += en.isBlue ? 500 : 100;
+                    if (en.isBlue && en.spriteKey !== 'enemy2') {
+                        game.blueK++;
+                        fx.burst(en.x, en.y, "#44aaff", 30, 7);
+                        sound.playBluePurify();
+                        txt.show(`蒼穢 浄化 (${game.blueK}/3)`, "#44aaff", 80, 24, CFG.W / 2, 100);
+                    }
+                    if (Math.random() < (en.isBlue ? 0.5 : 0.15)) relics.push(new Relic(en.x, en.y));
+                }
+                break;
+            }
+        }
+        if (!fc.active) continue;
+        if (boss && boss.active && boss.arrived && distSquared(fc.x, fc.y, boss.x, boss.y) < (boss.hitRadius + flockR) * (boss.hitRadius + flockR)) {
+            if (boss.idx !== 4 || boss.domeShieldT <= 0) {
+                boss.takeDamage(fc.damage || 12, fx);
+                sound.playHit();
+            }
+            fc.active = false;
+        }
+    }
+
+    // 雪（白スキル）→ 敵・ボス
+    const snowR = 14;
+    const snowR2 = snowR * snowR;
+    const snowParticles = game.snowParticles || [];
+    for (const s of snowParticles) {
+        if (!s.active || s.life % 4 !== 0) continue;
+        const dmg = s.damage != null ? s.damage : 3;
+        for (const en of enemies) {
+            if (!en.active || en.anim.state === 'DEATH') continue;
+            if (distSquared(s.x, s.y, en.x + (en.w || 20) / 2, en.y + (en.h || 16) / 2) < snowR2) {
+                en.takeDamage(dmg, fx);
+                if (en.hp <= 0) {
+                    game.score += en.isBlue ? 500 : 100;
+                    if (en.isBlue && en.spriteKey !== 'enemy2') {
+                        game.blueK++;
+                        fx.burst(en.x, en.y, "#44aaff", 30, 7);
+                        sound.playBluePurify();
+                        txt.show(`蒼穢 浄化 (${game.blueK}/3)`, "#44aaff", 80, 24, CFG.W / 2, 100);
+                    }
+                    if (Math.random() < (en.isBlue ? 0.5 : 0.15)) relics.push(new Relic(en.x, en.y));
+                }
+                break;
+            }
+        }
+        if (boss && boss.active && boss.arrived && distSquared(s.x, s.y, boss.x, boss.y) < (boss.hitRadius + snowR) * (boss.hitRadius + snowR)) {
+            if (boss.idx !== 4 || boss.domeShieldT <= 0) boss.takeDamage(dmg, fx);
+        }
+    }
+
     // 敵弾 → プレイヤー
     const playerBulletR = 11;
     const satelliteR = 18;

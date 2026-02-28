@@ -19,6 +19,9 @@ const BLUE_Y_MIN = CFG.BLUE_SPAWN_Y_MIN ?? 80;
 const BLUE_Y_MAX = CFG.H - (CFG.BLUE_SPAWN_Y_MAX_OFFSET ?? 100);
 const STAGES_WITH_SPRITE = [1, 2, 3, 4, 5, 6];
 const SPRITE_CHANCE = 0.3;
+/** 4面( stageIdx 3 ): スチームウルフ30% / 通常60% / 青穢10% */
+const STAGE3_STEAM_WOLF_RATIO = 0.3;
+const STAGE3_BLUE_RATIO = 0.1;
 
 /**
  * 敵をスポーンする。通常敵は右端から、青穢も右端から。出現間隔はステージデータで制御。
@@ -30,7 +33,18 @@ function spawnEnemies(game) {
     game.eCD--;
     if (game.eCD <= 0) {
         game.eCD = ri(sd.spawnMin || 40, sd.spawnMax || 80);
-        const useSprite = STAGES_WITH_SPRITE.indexOf(game.stageIdx) >= 0 && (game.stageIdx === 3 || game.stageIdx === 4 || Math.random() < SPRITE_CHANCE);
+        let useSprite;
+        if (game.stageIdx === 3) {
+            const r = Math.random();
+            if (r < STAGE3_BLUE_RATIO && game.blueK < 3) {
+                const blueY = rr(BLUE_Y_MIN, BLUE_Y_MAX);
+                game.enemies.push(new Enemy(SPAWN_RIGHT, blueY, sd, true, game.stageIdx, false));
+                return;
+            }
+            useSprite = r < STAGE3_BLUE_RATIO + STAGE3_STEAM_WOLF_RATIO;
+        } else {
+            useSprite = STAGES_WITH_SPRITE.indexOf(game.stageIdx) >= 0 && (game.stageIdx === 4 || Math.random() < SPRITE_CHANCE);
+        }
         const isStage6Enemy7 = game.stageIdx === 6 && useSprite;
         const spawnSwarm = isStage6Enemy7 && Math.random() < 0.25;
 
@@ -61,11 +75,11 @@ function spawnEnemies(game) {
         }
     }
 
-    if (game.blueK < 3) {
+    if (game.blueK < 3 && game.stageIdx !== 3) {
         game.blueCD--;
         if (game.blueCD <= 0) {
             game.blueCD = ri(280, 480);
-            /** 2面では青穢にガーゴイル(enemy2)スプライトを使わない。ガーゴイル＝通常敵のみ。 */
+            /** 2面では青穢にガーゴイル(enemy2)スプライトを使わない。ガーゴイル＝通常敵のみ。4面は10%ロールでスポーン済み。 */
             const useSpriteBlue = game.stageIdx !== 1 && STAGES_WITH_SPRITE.indexOf(game.stageIdx) >= 0 && Math.random() < SPRITE_CHANCE;
             const blueY = rr(BLUE_Y_MIN, BLUE_Y_MAX);
             game.enemies.push(new Enemy(SPAWN_RIGHT, blueY, sd, true, game.stageIdx, useSpriteBlue));
