@@ -35,7 +35,8 @@ class Boss {
         const hpScale = 2 * Math.pow(1.1, idx);
         if (idx === 6) {
             const baseHp = Math.floor((sd.bossHpBase || 660) / 3);
-            const formMul = this.form === 0 ? 1 : (this.form === 1 ? 2 : 3);
+            /* form0: ×1.4（40%固く・重い物質イメージ）, form1: ×2, form2: ×3 */
+            const formMul = this.form === 0 ? 1.4 : (this.form === 1 ? 2 : 3);
             this.maxHp = Math.floor(baseHp * formMul * hpScale);
             this.hp = this.maxHp;
         } else {
@@ -1243,37 +1244,76 @@ class Boss {
         const targetTy = py > territoryLineY ? baseTy + 80 : baseTy;
         this.ty += (targetTy - this.ty) * 0.03;
 
-        // 狂乱時の高速ダッシュ（追い詰められた虫が暴れるような動き）
+        /* ===== 突進フェーズ管理（発狂時: 右にタメ→左へ突込み）===== */
         if (this.berserk && this.domeShieldT <= 0) {
-            this.scarabotDashT = Math.max(0, (this.scarabotDashT || 0) - 1);
-            if (this.scarabotDashT === 0 && Math.random() < 0.02) {
-                const dashTargetY = clamp(py, H * 0.15, H * 0.55);
-                const ddx = px - this.x; const ddy = dashTargetY - this.y;
-                const dd = Math.hypot(ddx, ddy) || 1;
-                const dashSpd = 6;
-                this.scarabotDashVx = (ddx / dd) * dashSpd;
-                this.scarabotDashVy = (ddy / dd) * dashSpd;
-                this.scarabotDashT = 28;
+            this.scarabotRushCD = Math.max(0, (this.scarabotRushCD || 0) - 1);
+            if (!this.scarabotRushState) this.scarabotRushState = 'IDLE';
+
+            if (this.scarabotRushState === 'IDLE' && this.scarabotRushCD <= 0 && Math.random() < 0.016) {
+                this.scarabotRushState = 'WINDUP';
+                this.scarabotWindupT = 0;
                 this._playBossSE(opts, 'charge');
-                if (fx.addFloorCrack) fx.addFloorCrack(this.x, H - 5, 40);
+            }
+            if (this.scarabotRushState === 'WINDUP') {
+                this.scarabotWindupT++;
+                /* 右端へ素早く移動（タメ演出） */
+                this.x += (W - 120 - this.x) * 0.14;
+                this.y += (clamp(py, H * 0.2, H * 0.5) - this.y) * 0.06;
+                if (this.scarabotWindupT >= 42) {
+                    this.scarabotRushState = 'RUSH';
+                    this.scarabotRushT = 0;
+                    if (fx.shake !== undefined) fx.shake = Math.max(fx.shake || 0, 22);
+                }
+            } else if (this.scarabotRushState === 'RUSH') {
+                this.scarabotRushT++;
+                this.x -= 15; /* 右から左へ一気に突進 */
+                if (this.scarabotRushT >= 52 || this.x <= 100) {
+                    this.scarabotRushState = 'IDLE';
+                    this.scarabotRushCD = 280;
+                }
+            } else {
+                /* IDLE中は小刻みダッシュ（空中で暴れる） */
+                this.scarabotDashT = Math.max(0, (this.scarabotDashT || 0) - 1);
+                if (this.scarabotDashT === 0 && Math.random() < 0.018) {
+                    const dashTargetY = clamp(py, H * 0.15, H * 0.55);
+                    const ddx = px - this.x; const ddy = dashTargetY - this.y;
+                    const dd = Math.hypot(ddx, ddy) || 1;
+                    this.scarabotDashVx = (ddx / dd) * 5;
+                    this.scarabotDashVy = (ddy / dd) * 5;
+                    this.scarabotDashT = 22;
+                }
             }
         } else {
             this.scarabotDashT = Math.max(0, (this.scarabotDashT || 0) - 1);
         }
 
-        if (this.scarabotDashT > 0) {
-            // 暴れるようなダッシュ移動
+        /* ===== 移動計算 ===== */
+        const inRush = this.berserk && (this.scarabotRushState === 'WINDUP' || this.scarabotRushState === 'RUSH');
+        if (inRush) {
+            /* 突進フェーズ: 上記ブロックで x/y を直接更新済み */
+        } else if (this.scarabotDashT > 0 && this.berserk) {
             this.x += this.scarabotDashVx;
             this.y += this.scarabotDashVy;
         } else if (this.domeShieldT > 0) {
-            // ガード中はその場で踏ん張る（脚部のスタンプ表現は draw/FX 側で補完）
+            /* ガード中はその場で踏ん張る */
             this.x += (this.tx - this.x) * 0.1;
             this.y += (this.ty + 40 - this.y) * 0.1;
         } else {
-            // 通常時は tx/ty を中心に二重 sin で巡回（甲虫らしい重厚な歩行）
+            /* 空中ジグザグ巡回: X は正弦波、Y は三角波で鋭角反転（空の敵らしい俊敏な動き） */
+            const zigSpeed = this.berserk ? 0.045 : 0.028;
+            const zigT = this.timer * zigSpeed;
+            const zigAmp = this.berserk ? H * 0.3 : H * 0.24;
+            /* 三角波 (0→1→0): Y方向に鋭角ジグザグ */
+            const zigV = ((zigT % 2) < 1 ? (zigT % 1) : (1 - zigT % 1)) - 0.5;
             this.x = this.tx + Math.sin(this.timer * 0.015) * ampX;
-            this.y = this.ty + Math.sin(this.timer * 0.02) * ampY1 + Math.sin(this.timer * 0.031) * ampY2;
+            this.y = this.ty + zigV * zigAmp + Math.sin(this.timer * 0.031) * ampY2;
         }
+
+        /* コーナー脱出: 壁に近づいたら tx/ty を中心方向へ引き戻す（スタック防止） */
+        if (this.x < 120) this.tx = Math.min(this.tx + 4, W * 0.62);
+        if (this.x > W - 120) this.tx = Math.max(this.tx - 4, W * 0.38);
+        if (this.y < H * 0.18) this.ty = Math.min(this.ty + 2, H * 0.38);
+        if (this.y > H * 0.5) this.ty = Math.max(this.ty - 2, H * 0.28);
 
         this.x = clamp(this.x, 80, W - 80);
         this.y = clamp(this.y, H * 0.12, H * 0.55);
@@ -1544,6 +1584,13 @@ class Boss {
         this.omniusCD = (this.omniusCD || 0) - 1; this.fragmentCD = (this.fragmentCD || 0) - 1;
         this.neonCrackCD = (this.neonCrackCD || 0) - 1; this.dimensionalPulseCD = (this.dimensionalPulseCD || 0) - 1;
         this.iceSpawnCD = (this.iceSpawnCD || 0) - 1; this.apocalypseT = Math.max(0, (this.apocalypseT || 0) - 1);
+        /* ラスボス1専用CD（初回は余裕ある遅延で開始） */
+        if (this.blueLaserCD == null) this.blueLaserCD = 220; else this.blueLaserCD--;
+        if (this.voidChargeCD == null) this.voidChargeCD = 180; else this.voidChargeCD--;
+        this.blackHoleT = Math.max(0, (this.blackHoleT || 0) - 1);
+        /* ラスボス2専用CD（初回は余裕ある遅延で開始） */
+        if (this.colorSprayCD == null) this.colorSprayCD = 60; else this.colorSprayCD--;
+        if (this.mobBurstCD == null) this.mobBurstCD = 120; else this.mobBurstCD--;
 
         if (this.form === 2) {
             this.voidTeleportCD = (this.voidTeleportCD || 0) - 1;
@@ -1564,8 +1611,29 @@ class Boss {
             this.voidAfterimages = (this.voidAfterimages || []).filter(a => a.t > 0);
         }
 
-        this.x = this.tx + Math.sin(this.timer * 0.01) * (60 * formMul);
-        this.y = this.ty + Math.cos(this.timer * 0.012) * (35 * formMul);
+        if (this.form === 1) {
+            /* ラスボス2: ぴょんぴょん跳ねる移動（重力＋バウンス） */
+            this.bounceVy = (this.bounceVy || 0) + 0.28;
+            this.ty += this.bounceVy;
+            if (this.ty > H * 0.56) { this.ty = H * 0.56; this.bounceVy = -(6 + Math.random() * 3); if (fx.shake !== undefined) fx.shake = Math.max(fx.shake || 0, 8); }
+            if (this.ty < H * 0.14) { this.ty = H * 0.14; this.bounceVy = Math.abs(this.bounceVy) * 0.5; }
+            /* 左右もゆっくりプレイヤーへ寄る */
+            this.tx += (clamp(px, 120, W - 120) - this.tx) * 0.006;
+            this.x = this.tx + Math.sin(this.timer * 0.018) * (50 * formMul);
+            this.y = this.ty + Math.sin(this.timer * 0.03) * 12;
+        } else if (this.form === 0) {
+            /* ラスボス1: 突進（どすんどすん）中は直進 */
+            if (this.voidChargeT > 0) {
+                this.voidChargeT--;
+                this.tx += this.voidChargeDx;
+                this.ty += this.voidChargeDy;
+            }
+            this.x = this.tx + Math.sin(this.timer * 0.01) * (60 * formMul);
+            this.y = this.ty + Math.cos(this.timer * 0.012) * (35 * formMul);
+        } else {
+            this.x = this.tx + Math.sin(this.timer * 0.01) * (60 * formMul);
+            this.y = this.ty + Math.cos(this.timer * 0.012) * (35 * formMul);
+        }
         if (this.form === 2) {
             const t = this.timer * 0.01;
             const chaos = (a, b, c) => Math.sin(a * t) * Math.cos(b * t + 1.3) + Math.sin(c * t * 0.7) * 0.5;
@@ -1644,6 +1712,101 @@ class Boss {
 
         if (this.berserk && this.apocalypseT <= 0 && Math.random() < 0.003) {
             this._playBossSE(opts, 'big'); this.apocalypseT = 600;
+        }
+
+        /* ============================================================
+           ラスボス1 (form 0) 専用攻撃
+           ============================================================ */
+        if (this.form === 0) {
+            /* 青い太いレーザービーム: 球体が出現→そこからビームを3発放つ */
+            if (this.blueLaserCD <= 0) {
+                this.blueLaserCD = this.berserk ? 200 : 310;
+                this._playBossSE(opts, 'charge');
+                if (fx.shake !== undefined) fx.shake = Math.max(fx.shake || 0, 10);
+                if (fx.flash !== undefined) { fx.flash = 8; fx.fCol = '#0099ff'; }
+                /* 球体出現位置（ボスの前方） */
+                const sx = this.x + 60; const sy = this.y;
+                /* 球体に向けてプレイヤーへ3発ビーム */
+                const baseAngle = Math.atan2(py - sy, px - sx);
+                for (let i = -1; i <= 1; i++) {
+                    const a = baseAngle + i * 0.15;
+                    bullets.push({ x: sx, y: sy, vx: Math.cos(a) * 14, vy: Math.sin(a) * 14, active: true, color: '#0088ff', r: 11, isBlueLaser: true });
+                }
+                /* 球体のバーストエフェクト */
+                if (fx.burst) { fx.burst(sx, sy, '#0099ff', 20, 7, 25); fx.burst(sx, sy, '#ffffff', 8, 4, 15); }
+            }
+
+            /* どすんどすん突進: たまに素早くプレイヤーへ迫ってくる */
+            if (this.voidChargeCD <= 0 && !this.voidChargeT) {
+                this.voidChargeCD = this.berserk ? 160 : 240;
+                const ddx = px - this.tx; const ddy = py - this.ty;
+                const dd = Math.hypot(ddx, ddy) || 1;
+                const spd = 6;
+                this.voidChargeDx = (ddx / dd) * spd;
+                this.voidChargeDy = (ddy / dd) * spd;
+                this.voidChargeT = 18;
+                this._playBossSE(opts, 'big');
+                if (fx.shake !== undefined) fx.shake = Math.max(fx.shake || 0, 14);
+            }
+
+            /* 発狂時: ブラックホール予告（画面に大穴→四隅に出現） */
+            if (this.berserk && this.blackHoleT <= 0 && Math.random() < 0.004) {
+                this.blackHoleT = 160;
+                this._playBossSE(opts, 'big');
+                if (fx.shake !== undefined) fx.shake = Math.max(fx.shake || 0, 20);
+                if (fx.flash !== undefined) { fx.flash = 12; fx.fCol = '#000033'; }
+                /* 四隅のどこかに大量弾を出現させる */
+                const corners = [[90, 60], [W - 90, 60], [90, H - 60], [W - 90, H - 60]];
+                const corner = corners[Math.floor(Math.random() * corners.length)];
+                this.tx = corner[0]; this.ty = corner[1];
+                /* ブラックホール弾幕（放射状） */
+                const n = 20;
+                for (let i = 0; i < n; i++) {
+                    const a = (Math.PI * 2 / n) * i;
+                    bullets.push({ x: corner[0], y: corner[1], vx: Math.cos(a) * 3.5, vy: Math.sin(a) * 3.5, active: true, color: '#3300aa', r: 7 });
+                }
+                if (fx.burst) fx.burst(corner[0], corner[1], '#6600ff', 30, 9, 40);
+            }
+        }
+
+        /* ============================================================
+           ラスボス2 (form 1) 専用攻撃
+           ============================================================ */
+        if (this.form === 1) {
+            /* カラフル乱射（一定間隔で虹色弾幕） */
+            if (this.colorSprayCD <= 0) {
+                this.colorSprayCD = this.berserk ? 40 : 60;
+                const rainbow = ['#ff4444','#ff9900','#ffff00','#44ff44','#00aaff','#cc44ff'];
+                const n = this.berserk ? 12 : 8;
+                for (let i = 0; i < n; i++) {
+                    const a = (Math.PI * 2 / n) * i + this.timer * 0.04;
+                    const col = rainbow[i % rainbow.length];
+                    const spd = 3.5 + Math.random() * 2;
+                    bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, color: col, r: 5 });
+                }
+                this._playBossSE(opts, 'shot');
+            }
+
+            /* 発狂時: 雑魚弾幕を吐き出す（ランダム方向に小弾群） */
+            if (this.berserk && this.mobBurstCD <= 0) {
+                this.mobBurstCD = 90;
+                this._playBossSE(opts, 'shot');
+                if (fx.shake !== undefined) fx.shake = Math.max(fx.shake || 0, 6);
+                const n = 6 + Math.floor(Math.random() * 5);
+                for (let i = 0; i < n; i++) {
+                    const a = Math.random() * Math.PI * 2;
+                    const spd = 1.5 + Math.random() * 2.5;
+                    const col = ['#ff6666','#ff9933','#ffcc44'][Math.floor(Math.random() * 3)];
+                    bullets.push({ x: this.x + rr(-20, 20), y: this.y + rr(-15, 15), vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, color: col, r: 6 + Math.random() * 4 });
+                }
+                if (fx.burst) fx.burst(this.x, this.y, '#ff8800', 16, 6, 20);
+            }
+
+            /* 苦しみの表現: berserk 時に激しい画面揺れ＋サイズ脈動フラグ */
+            if (this.berserk && this.timer % 45 === 0) {
+                if (fx.shake !== undefined) fx.shake = Math.max(fx.shake || 0, 5);
+                this.voidSizePulse = (this.voidSizePulse || 0) + 1;
+            }
         }
 
         if (this.anim.state !== 'IDLE' && this.anim.done) this.anim.set('IDLE');
@@ -2174,7 +2337,10 @@ class Boss {
             const sx = col * cellW, sy = row * cellH;
             const BOSS_DISPLAY_MAX = 440;
             const maxDim = Math.max(cellW, cellH, 1);
-            let baseScale = (BOSS_DISPLAY_MAX / maxDim) * (1 + Math.sin(t * 0.04) * 0.03) * deathScale * BOSS_SIZE_SCALE;
+            /* ラスボス2: 苦しみのサイズ脈動（発狂時は激しく大小変化） */
+            const sizeOscAmp = this.berserk ? 0.22 : 0.08;
+            const sizeOscSpeed = this.berserk ? 0.11 : 0.06;
+            let baseScale = (BOSS_DISPLAY_MAX / maxDim) * (1 + Math.sin(t * sizeOscSpeed) * sizeOscAmp) * deathScale * BOSS_SIZE_SCALE;
             baseScale *= 1.5;
             const drawW = cellW * baseScale, drawH = cellH * baseScale;
             this._drawW = drawW; this._drawH = drawH;

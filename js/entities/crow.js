@@ -31,8 +31,12 @@ class Crow {
         this.bossAbilityCD = [0, 0, 0, 0, 0, 0, 0];
         /** スキルボタンで切り替える「現在選択中のスキル」の番号（取得済みスキル内で 0, 1, 2, …） */
         this.currentSkillSlotIndex = 0;
-        /** 分身カラス（灰スキル）の残りフレーム。30秒＝1800 */
+        /** 分身カラス（灰スキル）の残りフレーム。15秒＝900 */
         this.cloneCrowT = 0;
+        /** 分身位置履歴（0.3秒＝18フレーム遅延用） */
+        this.posHistory = [];
+        /** 分身カラスの描画・射撃用の遅延位置 */
+        this.cloneX = 0; this.cloneY = 0;
     }
     update(keys) {
         if (this.anim.state === 'KO') return;
@@ -67,7 +71,8 @@ class Crow {
             const targetVy = my * CFG.PLAYER_SPD;
             const isJoystick = keys['JoystickX'] !== undefined;
             if (isJoystick) {
-                const lerpF = 0.45;
+                /* 0.82: ほぼ即応しつつフレーム間のカクつきだけ抑制 */
+                const lerpF = 0.82;
                 this.vx = this.vx + (targetVx - this.vx) * lerpF;
                 this.vy = this.vy + (targetVy - this.vy) * lerpF;
             } else {
@@ -81,7 +86,21 @@ class Crow {
             if (this.dashChargeCD > 0) { this.dashChargeCD--; if (this.dashChargeCD <= 0) { this.dashCharges++; if (this.dashCharges < maxCharges) this.dashChargeCD = chargeCD; } }
         }
         for (let i = 0; i < 7; i++) if (this.bossAbilityCD[i] > 0) this.bossAbilityCD[i]--;
-        if (this.cloneCrowT > 0) this.cloneCrowT--;
+        if (this.cloneCrowT > 0) {
+            this.cloneCrowT--;
+            /* 位置履歴を蓄積（最大20フレーム保持） */
+            this.posHistory.push({ x: this.x, y: this.y });
+            if (this.posHistory.length > 20) this.posHistory.shift();
+            /* 18フレーム（0.3秒）前の位置を取得 */
+            const delayedPos = this.posHistory.length >= 18
+                ? this.posHistory[this.posHistory.length - 18]
+                : this.posHistory[0];
+            /* カラス一個分（40px）右にオフセットして遅延位置を確定 */
+            this.cloneX = delayedPos.x + 40;
+            this.cloneY = delayedPos.y;
+        } else {
+            this.posHistory = [];
+        }
         /* 左右どちらの入力でも向きは変えない（常に右向き） */
         this.x += this.vx; this.y += this.vy;
         this.x = clamp(this.x, CFG.MARGIN, CFG.W - this.w - CFG.MARGIN);
@@ -102,9 +121,9 @@ class Crow {
         if (this.hp < this.maxHp) this.hp = Math.min(this.maxHp, this.hp + 0.005);
     }
     _cloneShoot() {
-        /* 分身カラスの射撃: 本体より少し後方・上方から弾を発射。weaponLevelに応じて弾数増加 */
-        const cx = this.x + 28 + this.w / 2 + this.facing * 11;
-        const cy = this.y + this.h / 2 - 3;
+        /* 分身カラスの射撃: 遅延位置（0.3秒前）から発射。weaponLevelに応じて弾数増加 */
+        const cx = this.cloneX + this.w / 2 + this.facing * 11;
+        const cy = this.cloneY + this.h / 2 - 3;
         const lvl = Math.min(this.weaponLevel, 3);
         for (let i = 0; i < lvl; i++) {
             const spread = (i - (lvl - 1) / 2) * 0.18;
@@ -295,27 +314,75 @@ class Crow {
                     c.fill();
                     c.shadowBlur = 0;
                 } else if (f.isGreenArrow) {
-                    /* ===== 緑の矢印型エネルギー弾 ===== */
-                    const len = 24;
-                    const pulse = 0.8 + Math.sin(f.life * 0.35) * 0.2;
-                    c.shadowBlur = 16 * pulse;
-                    c.shadowColor = '#2ECC71';
-                    c.fillStyle = 'rgba(46, 204, 113, 0.93)';
+                    /* ===== 感電ライトニングボルト ===== */
+                    const len = 32;
+                    const pulse = 0.6 + Math.sin(f.life * 0.6) * 0.4;
+                    /* フレームごとにジグザグ形状をランダム変化（ちらつき） */
+                    const flick = Math.floor(f.life / 2) % 2;
+                    const jY = flick ? 1 : -1; /* ジグザグ方向反転 */
+                    /* ジグザグ頂点セット */
+                    const pts = [
+                        [-len,       0],
+                        [-len*0.62,  jY * 9],
+                        [-len*0.25,  jY * -6],
+                        [ len*0.12,  jY * 10],
+                        [ len*0.48,  jY * -7],
+                        [ len*0.75,  jY * 5],
+                        [ len,       0]
+                    ];
+                    /* 外側グロー（太い・薄緑） */
+                    c.shadowColor = '#00ff88';
+                    c.shadowBlur = 30 * pulse;
+                    c.strokeStyle = `rgba(0,255,120,0.35)`;
+                    c.lineWidth = 8;
                     c.beginPath();
-                    c.moveTo(len, 0);
-                    c.lineTo(len * 0.1, -6);
-                    c.lineTo(-len * 0.55, -3);
-                    c.lineTo(-len * 0.55, 3);
-                    c.lineTo(len * 0.1, 6);
-                    c.closePath();
-                    c.fill();
-                    c.shadowBlur = 10;
-                    c.strokeStyle = 'rgba(152, 255, 186, 0.88)';
+                    pts.forEach(([px,py], i) => i===0 ? c.moveTo(px,py) : c.lineTo(px,py));
+                    c.stroke();
+                    /* メインボルト（黄緑） */
+                    c.shadowBlur = 18 * pulse;
+                    c.shadowColor = '#88ffcc';
+                    c.strokeStyle = `rgba(100,255,170,0.92)`;
+                    c.lineWidth = 2.8;
+                    c.beginPath();
+                    pts.forEach(([px,py], i) => i===0 ? c.moveTo(px,py) : c.lineTo(px,py));
+                    c.stroke();
+                    /* コア（白） */
+                    c.shadowBlur = 8;
+                    c.shadowColor = '#ffffff';
+                    c.strokeStyle = 'rgba(220,255,235,0.98)';
+                    c.lineWidth = 1.2;
+                    c.beginPath();
+                    pts.forEach(([px,py], i) => i===0 ? c.moveTo(px,py) : c.lineTo(px,py));
+                    c.stroke();
+                    /* 分岐フォーク1（ランダム枝） */
+                    c.shadowBlur = 14 * pulse;
+                    c.shadowColor = '#00ff88';
+                    c.strokeStyle = `rgba(80,255,150,${0.55 + pulse*0.2})`;
                     c.lineWidth = 1.5;
                     c.beginPath();
-                    c.moveTo(len * 0.75, 0);
-                    c.lineTo(-len * 0.3, 0);
+                    c.moveTo(-len*0.25, jY * -6);
+                    c.lineTo(-len*0.05, jY * -20);
+                    c.lineTo( len*0.15, jY * -14);
                     c.stroke();
+                    /* 分岐フォーク2 */
+                    c.beginPath();
+                    c.moveTo(len*0.48, jY * -7);
+                    c.lineTo(len*0.62, jY * -19);
+                    c.stroke();
+                    /* 先端輝き（白球） */
+                    c.shadowBlur = 26 * pulse;
+                    c.shadowColor = '#ffffff';
+                    c.fillStyle = 'rgba(230,255,245,0.99)';
+                    c.beginPath();
+                    c.arc(len, 0, 4, 0, Math.PI * 2);
+                    c.fill();
+                    /* 後端グロー球 */
+                    c.shadowBlur = 14;
+                    c.shadowColor = '#00ff88';
+                    c.fillStyle = 'rgba(0,255,130,0.75)';
+                    c.beginPath();
+                    c.arc(-len, 0, 2.8, 0, Math.PI * 2);
+                    c.fill();
                     c.shadowBlur = 0;
                 } else {
                     const col = f.color || '#ff2222';
