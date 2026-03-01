@@ -40,6 +40,16 @@ const createGameBulletPool = global.CrowDestiny.createGameBulletPool;
 const updateSpecialBullets = global.CrowDestiny.updateSpecialBullets;
 const processBulletSplits = global.CrowDestiny.processBulletSplits;
 const processExplosiveBullets = global.CrowDestiny.processExplosiveBullets;
+const removeInactive = global.CrowDestiny.removeInactive;
+
+/** 1秒あたりの論理フレーム数（dt をかけると「フレーム換算」になる） */
+const FPS_BASE = 60;
+/** dt の上限（秒）。スパイク吸収で大きなフレーム落ち時に飛びすぎを防ぐ */
+const DT_CAP = 0.05;
+/** 描画カリング: このマージン（px）外のオブジェクトは描画しない（iOS 描画負荷軽減） */
+const CULL_MARGIN = 80;
+/** ステージクリア前フリーズ時間（フレーム）。この間は攻撃・残像を止めてから弾・残像をクリアする */
+const STAGE_CLEAR_FREEZE_DUR = 30;
 
 class Game {
     constructor() {
@@ -64,6 +74,7 @@ class Game {
         this.eBullets = bulletState.adapter;
         this.enemies = []; this.relics = []; this.obstacles = [];
         this.flockCrows = [];
+        this.grayOrbs = [];
         this.snowParticles = [];
         this.boss = null; this.score = 0; this.frame = 0;
         this.stageIdx = 0; this.blueK = 0; this.blueCD = 0; this.eCD = 0;
@@ -129,7 +140,7 @@ class Game {
             if (ls) { ls.style.opacity = '0'; ls.style.pointerEvents = 'none'; }
             setTimeout(() => { if (ls) ls.style.display = 'none'; }, 1500);
         });
-        this.loop();
+        requestAnimationFrame(t => this.loop(t));
     }
 
     togglePauseIfAllowed() {
@@ -144,26 +155,47 @@ class Game {
         this.sound.stopBGM();
         this.state = STATE.NARRATION; this.stateT = 0;
         this.enemies = []; this.bulletPool.releaseAll(); this.relics = []; this.obstacles = [];
-        this.flockCrows = []; this.snowParticles = [];
+        this.flockCrows = []; this.grayOrbs = []; this.snowParticles = [];
         this.boss = null; this.blueK = 0; this.blueCD = ri(180, 320); this.eCD = 0; this.arena = false; this.obsCD = ri(60, 120);
+        this._narrationShown = false;
         this.bg.scrolling = true; this.bg.setStage(this.sd); this.fadeA = 0; this.fadeD = 0; this.slowT = 0;
-        // ステージ移行時はHPを全回復（1面で瀕死クリア→2面開始で即ゲームオーバーになるのを防ぐ）
-        if (this.crow) this.crow.hp = this.crow.maxHp;
+        if (this.crow) {
+            this.crow.hp = this.crow.maxHp;
+            this.crow.feathers = [];
+            this.crow.dashTrail = [];
+        }
     }
 
     restart() {
         this.sound.stopBGM();
-        this.crow = new Crow(this.sound); this.enemies = []; this.bulletPool.releaseAll(); this.relics = []; this.obstacles = []; this.flockCrows = []; this.snowParticles = []; this.boss = null;
-        this.score = 0; this.frame = 0; this.stageIdx = 0; this.fx = new FX(this); this.txt = new TextOverlay(); this.efx = new EffectOverlay();
+        this.crow = new Crow(this.sound); this.enemies = []; this.bulletPool.releaseAll(); this.relics = []; this.obstacles = []; this.flockCrows = []; this.grayOrbs = []; this.snowParticles = []; this.boss = null;
+        this.score = 0; this.frame = 0; this.stageIdx = 0; this.blueK = 0; this.blueCD = 0;
+        this.fx = new FX(this); this.txt = new TextOverlay(); this.efx = new EffectOverlay();
         this.bg = new Background(); this.state = STATE.TITLE; this.stateT = 0; this.fadeA = 0; this.slowT = 0; this._lastBossBGMForm = -1; this.lastBossForm = undefined;
+    }
+
+    /** ゲームオーバー時: 現在のステージの始めから再挑戦（スコア・解放スキルは維持） */
+    retryCurrentStage() {
+        this.sound.stopBGM();
+        this.enemies = []; this.bulletPool.releaseAll(); this.relics = []; this.obstacles = []; this.flockCrows = []; this.grayOrbs = []; this.snowParticles = []; this.boss = null;
+        if (this.crow) {
+            this.crow.hp = this.crow.maxHp;
+            this.crow.feathers = [];
+            this.crow.dashTrail = [];
+            this.crow.anim.set('FLY');
+        }
+        this.state = STATE.NARRATION;
+        this.stateT = 0;
+        this._narrationShown = false;
+        this.startStage();
     }
 
     applyRelic(r) {
         this.sound.playItem();
         const e = r.type.effect;
         if (e === "HEAL") { this.crow.hp = Math.min(this.crow.maxHp, this.crow.hp + 30); this.efx.add("HEAL", "#44ff44", 50); }
-        else if (e === "BARRIER") { this.crow.barrier = 480; this.efx.add("BARRIER", "#aaeeff", 50); }
-        else if (e === "SLOW") { this.slowT = 360; this.efx.add("SLOW", "#cc88ff", 50); }
+        else if (e === "BARRIER") { this.crow.barrier = 480; this.efx.add("BARRIER", "#aaeeff", 480); }
+        else if (e === "SLOW") { this.slowT = 480; this.efx.add("SLOW", "#cc88ff", 50); }
         else if (e === "BOMB") {
             this.efx.add("BOMB", "#ff4400", 50);
             this.enemies.forEach(en => { if (en.active) { en.hp = 0; en.anim.set('DEATH'); this.fx.burst(en.x, en.y, en.color, 12); this.score += 100; } });
@@ -238,18 +270,18 @@ class Game {
         const W = CFG.W;
         const H = CFG.H;
         if (idx === 0) {
-            /* 紫スキル: 3本の剣を平行に真っ直ぐ発射（上・中・下 vy=0） */
+            /* スキル1: 紫スキル 3本の剣（威力1 < 2 < 3 < 4 のうち最弱） */
             const swordOffsets = [{ yo: -14, vy: 0 }, { yo: 0, vy: 0 }, { yo: 14, vy: 0 }];
             for (const s of swordOffsets) {
-                cr.feathers.push({ x: cx, y: cy + s.yo, vx: cr.facing * 16, vy: s.vy, active: true, life: 0, isBeam: true, color: '#9B59D6', isPurpleSword: true });
+                cr.feathers.push({ x: cx, y: cy + s.yo, vx: cr.facing * 16, vy: s.vy, active: true, life: 0, isBeam: true, color: '#9B59D6', isPurpleSword: true, damage: 10 });
             }
             this.fx.burst(cx, cy, '#9B59D6', 20, 5);
         } else if (idx === 1) {
-            /* 緑スキル: 8方向感電ライトニング */
+            /* スキル2: 緑スキル 8方向感電（威力2） */
             const spd = 17;
             for (let i = 0; i < 8; i++) {
                 const a = (Math.PI / 4) * i;
-                cr.feathers.push({ x: cx, y: cy, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, life: 0, isBeam: true, color: '#2ECC71', isGreenArrow: true });
+                cr.feathers.push({ x: cx, y: cy, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, active: true, life: 0, isBeam: true, color: '#2ECC71', isGreenArrow: true, damage: 13 });
             }
             /* 感電バースト演出: 緑スパーク + 白コア + 軽い画面フラッシュ */
             this.fx.burst(cx, cy, '#00ff88', 35, 9, 35);
@@ -258,22 +290,41 @@ class Game {
             this.fx.flash = 5; this.fx.fCol = '#00ff66';
             this.fx.shake = 4;
         } else if (idx === 2) {
-            cr.cloneCrowT = 15 * 60; /* 15秒 */
-            cr.posHistory = [];      /* 履歴リセット */
-            this.efx.add("CLONE", "#95a5a6", 60);
+            /* スキル3: 灰スキル 10個の弾（威力3） */
+            const numOrbs = 10;
+            const startRadius = 52;
+            const spreadSpd = 0.38;
+            const rotSpd = 0.022;
+            for (let i = 0; i < numOrbs; i++) {
+                const a = (i / numOrbs) * Math.PI * 2;
+                this.grayOrbs.push({
+                    x: cx + Math.cos(a) * startRadius,
+                    y: cy + Math.sin(a) * startRadius,
+                    angle: a,
+                    rot: a,
+                    spreadSpd,
+                    rotSpd,
+                    damage: 16,
+                    active: true,
+                    life: 0,
+                    maxLife: 200
+                });
+            }
+            this.efx.add("ORBIT", "#95a5a6", 60);
             this.fx.burst(cx, cy, '#7F8C8D', 16, 5);
         } else if (idx === 3) {
-            /* 赤スキル: 群れカラス 9羽(3×3)に強化 */
+            /* スキル4: 群れカラス 9羽 — 上下に激しく動きながら進む、スピード40% */
             const baseY = cr.y + cr.h / 2;
             for (let row = 0; row < 3; row++) {
                 for (let col = 0; col < 3; col++) {
                     this.flockCrows.push({
                         x: cr.x - 50 - col * 22,
                         y: baseY - 25 + row * 22 + (col % 2) * 6,
-                        vx: 20,
-                        vy: (row - 1) * 0.6,
+                        vx: 8,
+                        vy: 0,
+                        life: 0,
                         active: true,
-                        damage: 15
+                        damage: 20
                     });
                 }
             }
@@ -299,17 +350,35 @@ class Game {
                 });
             }
             this.fx.burst(cx, cy, '#ECF0F1', 35, 8);
+        } else if (idx === 6) {
+            /* ラスボス解放スキル: ヴォイドスプレッド — スキル3と同じダメージ（16） */
+            const n = 12;
+            const spreadAngle = Math.PI * 0.55;
+            const baseAngle = -spreadAngle / 2;
+            const spd = 18;
+            for (let i = 0; i < n; i++) {
+                const a = baseAngle + (spreadAngle * i) / (n - 1 || 1) + (cr.facing < 0 ? Math.PI : 0);
+                cr.feathers.push({
+                    x: cx, y: cy,
+                    vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
+                    active: true, life: 0, isBeam: true, color: '#ff44ff', isVoidSpread: true, damage: 16
+                });
+            }
+            this.fx.burst(cx, cy, '#ff44ff', 40, 10, 30);
+            this.fx.flash = 8; this.fx.fCol = '#cc44ff';
+            this.fx.shake = 6;
         }
     }
 
-    _updateFeathersAndSkills() {
+    _updateFeathersAndSkills(d) {
+        if (d == null) d = 1;
         const cr = this.crow;
         const W = CFG.W;
         const H = CFG.H;
         cr.feathers.forEach(f => {
-            f.x += f.vx;
-            f.y += f.vy;
-            f.life++;
+            f.x += f.vx * d;
+            f.y += f.vy * d;
+            f.life += d;
             if (f.x < -30 || f.x > W + 30 || f.y < -30 || f.y > H + 30) f.active = false;
             if (f.isPurpleSword && f.active) {
                 let tx = f.x + f.vx * 30;
@@ -345,15 +414,16 @@ class Game {
         this.bulletPool.releaseAll(); this.obstacles = []; this.txt.show(`「${this.sd.bossName}」が現れた…`, "#ff0000", 150, 36, CFG.W / 2, CFG.H / 2);
     }
 
-    update() {
+    update(dt) {
         if (this.paused) return;
-        this.frame++; this.stateT++;
-        /* ジョイスティック: 左パネルDOMジョイスティックがあれば優先、なければキャンバス左半分の仮想ジョイスティック */
+        if (dt == null || dt <= 0) dt = 1 / FPS_BASE;
+        const d = Math.min(dt, DT_CAP) * FPS_BASE;
+        this.frame++; this.stateT += d;
+        /* ジョイスティック: 左パネルDOMジョイスティックがあれば優先、なければキャンバス左半分の仮想ジョイスティックのみ使用 */
         delete this.keys['JoystickX'];
         delete this.keys['JoystickY'];
-        /* 左パネルDOMジョイスティックは廃止。タッチ時にキャンバス上に出現する仮想ジョイスティックのみ使用 */
         this.joystick.update();
-        this.fx.update(); this.txt.update(); this.efx.update(); this.bg.update();
+        this.fx.update(d); this.txt.update(d); this.efx.update(d); this.bg.update(d);
         /** 覚醒レベル: Lv.2=10000, Lv.3=25000, Lv.4=55000, Lv.5=80000, Lv.6=100000。レベルアップ時は「LEVEL UP!」表示＋SE */
         if (this.crow) {
             const oldLv = this.crow.weaponLevel;
@@ -368,8 +438,8 @@ class Game {
                 this.sound.playLevelUp();
             }
         }
-        if (this.slowT > 0) this.slowT--;
-        if (this.fadeD !== 0) this.fadeA = clamp(this.fadeA + this.fadeD * 0.02, 0, 1);
+        if (this.slowT > 0) this.slowT -= d;
+        if (this.fadeD !== 0) this.fadeA = clamp(this.fadeA + this.fadeD * 0.02 * d, 0, 1);
 
         const start = this.keys['Space'] || this.keys['Enter'] || this.keys['TouchStart'];
         if (start) { this.keys['Space'] = false; this.keys['Enter'] = false; this.keys['TouchStart'] = false; }
@@ -388,7 +458,7 @@ class Game {
             return;
         }
         if (this.state === STATE.NARRATION) {
-            if (this.stateT === 1) { this.txt.show(`— 第${this.stageIdx + 1}章 : ${this.sd.name} —`, "#ff4d00", 200, 38, CFG.W / 2, CFG.H / 2 - 60); this.sd.desc.split('\n').forEach((l, i) => this.txt.show(l, "#e0cda7", 200, 26, CFG.W / 2, CFG.H / 2 + i * 40)); }
+            if (!this._narrationShown) { this._narrationShown = true; this.txt.show(`— 第${this.stageIdx + 1}章 : ${this.sd.name} —`, "#ff4d00", 200, 38, CFG.W / 2, CFG.H / 2 - 60); this.sd.desc.split('\n').forEach((l, i) => this.txt.show(l, "#e0cda7", 200, 26, CFG.W / 2, CFG.H / 2 + i * 40)); }
             if (this.stateT > 220 || (this.stateT > 40 && start)) {
                 this.state = STATE.PLAYING; this.stateT = 0;
                 this.sound.playBGM('stage' + (this.stageIdx + 1));
@@ -396,23 +466,37 @@ class Game {
             return;
         }
         if (this.state === STATE.PLAYING) {
-            this.crow.update(this.keys); this.tryTriggerBossAbility(); this._updateSkillButton(); spawnEnemies(this); spawnObstacles(this);
-            const ss = this.scrollSpd; this.enemies.forEach(e => e.update(this.crow.cx, this.crow.cy, this.eBullets, ss, this.fx));
+            const effD = this.slowT > 0 ? d * 0.5 : d;
+            this.crow.update(this.keys, d); this.tryTriggerBossAbility(); this._updateSkillButton(); this.eCD -= d; this.blueCD -= d; this.obsCD -= d; spawnEnemies(this); spawnObstacles(this);
+            const ss = this.scrollSpd; this.enemies.forEach(e => e.update(this.crow.cx, this.crow.cy, this.eBullets, ss, this.fx, effD));
             updateSpecialBullets(this.eBullets);
             if (processBulletSplits) processBulletSplits(this.eBullets);
-            this.eBullets.forEach(b => { b.x += b.vx; b.y += b.vy; if (b.x < -30 || b.x > CFG.W + 30 || b.y < -30 || b.y > CFG.H + 30) b.active = false; });
+            this.eBullets.forEach(b => { b.x += b.vx * effD; b.y += b.vy * effD; if (b.x < -30 || b.x > CFG.W + 30 || b.y < -30 || b.y > CFG.H + 30) b.active = false; });
             if (processExplosiveBullets) processExplosiveBullets(this.eBullets, this);
-            this._updateFeathersAndSkills();
-            this.flockCrows.forEach(fc => { fc.x += fc.vx; fc.y += (fc.vy || 0); if (fc.x > CFG.W + 60) fc.active = false; });
-            this.snowParticles.forEach(s => { s.x += s.vx; s.y += s.vy; s.life++; if (s.life > (s.maxLife || 120) || s.x < -20 || s.x > CFG.W + 20 || s.y < -20 || s.y > CFG.H + 20) s.active = false; });
-            this.relics.forEach(r => r.update(ss)); this.obstacles.forEach(o => o.update(ss)); checkCollisions(this);
-            this.enemies = this.enemies.filter(e => e.active); this.crow.feathers = this.crow.feathers.filter(f => f.active); this.flockCrows = this.flockCrows.filter(fc => fc.active); this.snowParticles = this.snowParticles.filter(s => s.active); this.bulletPool.releaseInactive(); this.relics = this.relics.filter(r => r.active); this.obstacles = this.obstacles.filter(o => o.active);
+            this._updateFeathersAndSkills(d);
+            this.flockCrows.forEach(fc => {
+                fc.life = (fc.life || 0) + d;
+                fc.x += fc.vx * d;
+                const wave = Math.sin(fc.life * 0.25) * 6 * d;
+                fc.y += (fc.vy || 0) * d + wave;
+                if (fc.x > CFG.W + 60) fc.active = false;
+            });
+            this.grayOrbs.forEach(o => {
+                o.life += d;
+                o.x += Math.cos(o.angle) * (o.spreadSpd || 0.38) * d;
+                o.y += Math.sin(o.angle) * (o.spreadSpd || 0.38) * d;
+                o.rot += (o.rotSpd || 0.022) * d;
+                if (o.life > (o.maxLife || 200) || o.x < -50 || o.x > CFG.W + 50 || o.y < -50 || o.y > CFG.H + 50) o.active = false;
+            });
+            this.snowParticles.forEach(s => { s.x += s.vx * d; s.y += s.vy * d; s.life += d; if (s.life > (s.maxLife || 120) || s.x < -20 || s.x > CFG.W + 20 || s.y < -20 || s.y > CFG.H + 20) s.active = false; });
+            this.relics.forEach(r => r.update(ss, d)); this.obstacles.forEach(o => o.update(ss, effD)); checkCollisions(this);
+            removeInactive(this.enemies, e => e.active); removeInactive(this.crow.feathers, f => f.active); removeInactive(this.flockCrows, fc => fc.active); removeInactive(this.grayOrbs, o => o.active); removeInactive(this.snowParticles, s => s.active); this.bulletPool.releaseInactive(); removeInactive(this.relics, r => r.active); removeInactive(this.obstacles, o => o.active);
             if (this.crow.hp <= 0) { this.state = STATE.GAME_OVER; this.stateT = 0; this.sound.stopBGM(); this.sound.playGameOver(); this.sound.playBGM('gameover'); return; }
             if (this.blueK >= 3) this.triggerBoss();
             return;
         }
         if (this.state === STATE.BOSS_INTRO) {
-            this.crow.update(this.keys); this.crow.feathers.forEach(f => { f.x += f.vx; f.y += f.vy; f.life++; if (f.x < -30 || f.x > CFG.W + 30) f.active = false; }); this.crow.feathers = this.crow.feathers.filter(f => f.active);
+            this.crow.update(this.keys, d); this.crow.feathers.forEach(f => { f.x += f.vx * d; f.y += f.vy * d; f.life += d; if (f.x < -30 || f.x > CFG.W + 30) f.active = false; }); removeInactive(this.crow.feathers, f => f.active);
             if (this.stateT > 120) {
                 const form = this.stageIdx === 6 ? (this.lastBossForm ?? 0) : undefined;
                 this.boss = new Boss(this.sd, this.stageIdx, form);
@@ -435,6 +519,7 @@ class Game {
             return;
         }
         if (this.state === STATE.BOSS_FIGHT) {
+            const effD = this.slowT > 0 ? d * 0.5 : d;
             /* ラスボスBGM: 第1形態=boss7, 第2形態=lastboss1(lastboss.mp3), 第3形態=lastboss2(lastboss2.mp3) */
             if (this.stageIdx === 6 && this.boss && this.boss.active) {
                 const form = this.boss.form;
@@ -449,17 +534,30 @@ class Game {
             if (this.boss && this.boss.idx === 3 && this.boss.mirrorActiveT > 0) {
                 keys = { ...this.keys, ArrowLeft: this.keys['ArrowRight'], ArrowRight: this.keys['ArrowLeft'], KeyA: this.keys['KeyD'], KeyD: this.keys['KeyA'], TouchLeft: this.keys['TouchRight'], TouchRight: this.keys['TouchLeft'] };
             }
-            this.crow.update(keys); this.tryTriggerBossAbility(); this._updateSkillButton();
-            this._updateFeathersAndSkills();
-            this.flockCrows.forEach(fc => { fc.x += fc.vx; fc.y += (fc.vy || 0); if (fc.x > CFG.W + 60) fc.active = false; });
-            this.snowParticles.forEach(s => { s.x += s.vx; s.y += s.vy; s.life++; if (s.life > (s.maxLife || 120) || s.x < -20 || s.x > CFG.W + 20 || s.y < -20 || s.y > CFG.H + 20) s.active = false; });
+            this.crow.update(keys, d); this.tryTriggerBossAbility(); this._updateSkillButton();
+            this._updateFeathersAndSkills(d);
+            this.flockCrows.forEach(fc => {
+                fc.life = (fc.life || 0) + d;
+                fc.x += fc.vx * d;
+                const wave = Math.sin(fc.life * 0.25) * 6 * d;
+                fc.y += (fc.vy || 0) * d + wave;
+                if (fc.x > CFG.W + 60) fc.active = false;
+            });
+            this.grayOrbs.forEach(o => {
+                o.life += d;
+                o.x += Math.cos(o.angle) * (o.spreadSpd || 0.38) * d;
+                o.y += Math.sin(o.angle) * (o.spreadSpd || 0.38) * d;
+                o.rot += (o.rotSpd || 0.022) * d;
+                if (o.life > (o.maxLife || 200) || o.x < -50 || o.x > CFG.W + 50 || o.y < -50 || o.y > CFG.H + 50) o.active = false;
+            });
+            this.snowParticles.forEach(s => { s.x += s.vx * d; s.y += s.vy * d; s.life += d; if (s.life > (s.maxLife || 120) || s.x < -20 || s.x > CFG.W + 20 || s.y < -20 || s.y > CFG.H + 20) s.active = false; });
             if (this.boss && this.boss.idx === 3) {
                 this.playerPathHistory.push({ x: this.crow.cx, y: this.crow.cy });
                 if (this.playerPathHistory.length > 180) this.playerPathHistory.shift();
             }
             const bossOpts = { sound: this.sound };
             if (this.boss && this.boss.idx === 3) bossOpts.playerPath = this.playerPathHistory;
-            this.boss.update(this.crow.cx, this.crow.cy, this.eBullets, this.enemies, this.fx, this.sd, bossOpts);
+            this.boss.update(this.crow.cx, this.crow.cy, this.eBullets, this.enemies, this.fx, this.sd, bossOpts, d);
             if (this.boss && this.boss.idx === 3) {
                 this.crow.aimOffset = 0;
                 if (this.boss.glitchFieldRect) {
@@ -468,23 +566,23 @@ class Game {
                         this.crow.aimOffset = this.boss.aimOffsetRad;
                 }
             }
-            this.enemies.forEach(e => e.update(this.crow.cx, this.crow.cy, this.eBullets, 0, this.fx));
+            this.enemies.forEach(e => e.update(this.crow.cx, this.crow.cy, this.eBullets, 0, this.fx, effD));
             updateSpecialBullets(this.eBullets);
             if (processBulletSplits) processBulletSplits(this.eBullets);
             this.eBullets.forEach(b => {
                 if (b.homing) {
-                    const dx = this.crow.cx - b.x; const dy = this.crow.cy - b.y; const d = Math.hypot(dx, dy) || 1;
+                    const dx = this.crow.cx - b.x; const dy = this.crow.cy - b.y; const dist = Math.hypot(dx, dy) || 1;
                     const wantA = Math.atan2(dy, dx); const curA = Math.atan2(b.vy, b.vx);
                     let da = wantA - curA; while (da > Math.PI) da -= Math.PI * 2; while (da < -Math.PI) da += Math.PI * 2;
                     const turn = (15 * Math.PI / 180) / 60; const newA = curA + Math.max(-turn, Math.min(turn, da));
                     const spd = Math.hypot(b.vx, b.vy);
                     b.vx = Math.cos(newA) * spd; b.vy = Math.sin(newA) * spd;
                 }
-                b.x += b.vx; b.y += b.vy;
+                b.x += b.vx * effD; b.y += b.vy * effD;
                 if (b.x < -30 || b.x > CFG.W + 30 || b.y < -30 || b.y > CFG.H + 30) b.active = false;
             });
             if (processExplosiveBullets) processExplosiveBullets(this.eBullets, this);
-            this.relics.forEach(r => r.update(0)); checkCollisions(this); this.enemies = this.enemies.filter(e => e.active); this.crow.feathers = this.crow.feathers.filter(f => f.active); this.flockCrows = this.flockCrows.filter(fc => fc.active); this.snowParticles = this.snowParticles.filter(s => s.active); this.bulletPool.releaseInactive(); this.relics = this.relics.filter(r => r.active);
+            this.relics.forEach(r => r.update(0, d)); checkCollisions(this); removeInactive(this.enemies, e => e.active); removeInactive(this.crow.feathers, f => f.active); removeInactive(this.flockCrows, fc => fc.active); removeInactive(this.grayOrbs, o => o.active); removeInactive(this.snowParticles, s => s.active); this.bulletPool.releaseInactive(); removeInactive(this.relics, r => r.active);
             if (this.crow.hp <= 0) { this.state = STATE.GAME_OVER; this.stateT = 0; this.sound.stopBGM(); this.sound.playGameOver(); this.sound.playBGM('gameover'); return; }
             if (this.boss && !this.boss.active && this.boss.anim && this.boss.anim.done) {
                 if (this.stageIdx === 6 && this.lastBossForm !== undefined && this.lastBossForm < 2) {
@@ -500,22 +598,41 @@ class Game {
                 } else {
                     this.score += 1000 * (this.stageIdx + 1); for (let i = 0; i < 3; i++) this.relics.push(new Relic(this.boss.x + rr(-40, 40), this.boss.y + rr(-20, 20)));
                     this.crow.unlockedBossAbilities[this.boss.idx] = true;
-                    this.state = STATE.STAGE_CLEAR; this.stateT = 0; this.sound.stopBGM(); this.sound.playStageClear();
-                    this.txt.show("STAGE CLEAR", "#ffcc00", 180, 48, CFG.W / 2, CFG.H / 2 - 40); this.txt.show(`— ${this.sd.name} 浄化完了 —`, "#e0cda7", 180, 24, CFG.W / 2, CFG.H / 2 + 10);
+                    this.state = STATE.STAGE_CLEAR_FREEZE; this.stateT = 0; this.sound.stopBGM(); this.sound.playStageClear();
                 }
             } return;
         }
+        if (this.state === STATE.STAGE_CLEAR_FREEZE) {
+            if (this.stateT >= STAGE_CLEAR_FREEZE_DUR) {
+                this.crow.feathers = [];
+                this.crow.dashTrail = [];
+                this.state = STATE.STAGE_CLEAR; this.stateT = 0; this._stageClearSoundTick = 0;
+                this.txt.show("STAGE CLEAR", "#ffcc00", 180, 48, CFG.W / 2, CFG.H / 2 - 40); this.txt.show(`— ${this.sd.name} 浄化完了 —`, "#e0cda7", 180, 24, CFG.W / 2, CFG.H / 2 + 10);
+            }
+            return;
+        }
         if (this.state === STATE.STAGE_CLEAR) {
-            this.crow.update(this.keys); this.relics.forEach(r => r.update(0)); this.relics.forEach(r => { if (r.active && dist(r.x, r.y, this.crow.cx, this.crow.cy) < CFG.RELIC_PICKUP_RADIUS) { r.active = false; this.applyRelic(r); } }); this.relics = this.relics.filter(r => r.active);
-            if (this.stateT > 150) { this.crow.x += 8; this.crow.anim.set('DASH'); } if (this.stateT > 180) this.fadeD = 1;
-            if (this.stateT > 230) {
+            const stageClearDash = this.stateT > 45;
+            this.crow.update(this.keys, d, { canShoot: false, noClampRight: stageClearDash });
+            this.relics.forEach(r => r.update(0, d)); this.relics.forEach(r => { if (r.active && dist(r.x, r.y, this.crow.cx, this.crow.cy) < CFG.RELIC_PICKUP_RADIUS) { r.active = false; this.applyRelic(r); } }); removeInactive(this.relics, r => r.active);
+            if (stageClearDash) {
+                this.crow.x += 14 * d;
+                this.crow.anim.set('DASH');
+                this._stageClearSoundTick = (this._stageClearSoundTick || 0) + d;
+                if (this._stageClearSoundTick >= 20) {
+                    if (this.sound.playSEProcedural) this.sound.playSEProcedural('dash');
+                    this._stageClearSoundTick = 0;
+                }
+            }
+            if (this.stateT > 180) this.fadeD = 1;
+            if (this.stateT > 250) {
                 if (this.stageIdx < STAGES.length - 1) {
                     this.sound.playStageTransition();
                     this.stageIdx++; this.crow.x = 100; this.crow.y = CFG.H / 2 - 4; this.fadeD = -1; this.startStage();
                 } else { this.state = STATE.VICTORY; this.stateT = 0; this.fadeD = -1; this.sound.playBGM('ending'); }
             } return;
         }
-        if (this.state === STATE.GAME_OVER) { if (this.stateT > 90 && start) this.restart(); return; }
+        if (this.state === STATE.GAME_OVER) { if (this.stateT > 90 && start) this.retryCurrentStage(); return; }
         if (this.state === STATE.VICTORY) { if (this.stateT > 150 && start) this.restart(); return; }
     }
 
@@ -531,8 +648,12 @@ class Game {
         }
         const mirror = this.state === STATE.BOSS_FIGHT && this.boss && this.boss.idx === 3 && this.boss.mirrorActiveT > 0;
         if (mirror) { c.save(); c.translate(CFG.W, 0); c.scale(-1, 1); c.translate(-CFG.W, 0); }
-        this.obstacles.forEach(o => o.draw(c)); this.relics.forEach(r => r.draw(c)); this.enemies.forEach(e => e.draw(c));
-        this.eBullets.forEach(b => { if (!b.active) return; c.save(); c.globalAlpha = 0.85; c.fillStyle = b.color; c.beginPath(); c.arc(b.x, b.y, b.r || 5, 0, Math.PI * 2); c.fill(); c.globalAlpha = 0.3; c.beginPath(); c.arc(b.x, b.y, (b.r || 5) + 4, 0, Math.PI * 2); c.fill(); c.restore(); });
+        const qEff = this.qualityEffect != null ? this.qualityEffect : 1;
+        const inView = (x, y) => x >= -CULL_MARGIN && x <= CFG.W + CULL_MARGIN && y >= -CULL_MARGIN && y <= CFG.H + CULL_MARGIN;
+        this.obstacles.forEach(o => { if (inView(o.x, o.y)) o.draw(c); });
+        this.relics.forEach(r => { if (inView(r.x, r.y)) r.draw(c); });
+        this.enemies.forEach(e => { if (inView(e.x, e.y)) e.draw(c, this); });
+        this.eBullets.forEach(b => { if (!b.active || !inView(b.x, b.y)) return; c.save(); c.globalAlpha = 0.85; c.fillStyle = b.color; c.beginPath(); c.arc(b.x, b.y, b.r || 5, 0, Math.PI * 2); c.fill(); c.globalAlpha = 0.3; c.beginPath(); c.arc(b.x, b.y, (b.r || 5) + 4, 0, Math.PI * 2); c.fill(); c.restore(); });
         this.crow.drawFeathers(c); this.crow.drawTrail(c);
         if (this.crow.cloneCrowT > 0 && this.crow.posHistory.length > 0) {
             /* 0.3秒遅延位置に分身を描画（本体との差分オフセット） */
@@ -544,10 +665,10 @@ class Game {
             c.save(); c.globalAlpha = alpha; c.translate(dx, dy); c.scale(0.9, 0.9); this.crow.draw(c); c.restore();
         }
         this.flockCrows.forEach(fc => {
-            if (!fc.active) return;
+            if (!fc.active || !inView(fc.x, fc.y)) return;
             c.save();
             c.translate(fc.x, fc.y);
-            c.shadowColor = '#E74C3C'; c.shadowBlur = 10;
+            if (qEff >= 0.5) { c.shadowColor = '#E74C3C'; c.shadowBlur = 10; }
             /* 胴体 */
             c.fillStyle = '#c0392b';
             c.beginPath(); c.ellipse(0, 0, 9, 6, 0, 0, Math.PI * 2); c.fill();
@@ -560,13 +681,29 @@ class Game {
             c.beginPath(); c.moveTo(9, 0); c.lineTo(14, -2); c.lineTo(14, 2); c.closePath(); c.fill();
             c.restore();
         });
+        this.grayOrbs.forEach(o => {
+            if (!o.active || !inView(o.x, o.y)) return;
+            c.save();
+            c.translate(o.x, o.y);
+            c.rotate(o.rot || 0);
+            if (qEff >= 0.5) { c.shadowColor = '#95a5a6'; c.shadowBlur = 6; }
+            c.fillStyle = 'rgba(149, 165, 166, 0.88)';
+            c.strokeStyle = 'rgba(180, 190, 192, 0.7)';
+            c.lineWidth = 1;
+            c.beginPath();
+            c.ellipse(0, 0, 8, 5, 0, 0, Math.PI * 2);
+            c.fill();
+            c.stroke();
+            c.shadowBlur = 0;
+            c.restore();
+        });
         this.snowParticles.forEach(s => {
-            if (!s.active) return;
+            if (!s.active || !inView(s.x, s.y)) return;
             const prog = 1 - s.life / (s.maxLife || 180);
             const alpha = 0.35 + 0.5 * prog;
             const r = 2 + prog * 2;
             c.save();
-            c.shadowColor = '#aaddff'; c.shadowBlur = 5;
+            if (qEff >= 0.5) { c.shadowColor = '#aaddff'; c.shadowBlur = 5; }
             c.fillStyle = `rgba(220,240,255,${alpha})`;
             c.beginPath(); c.arc(s.x, s.y, r, 0, Math.PI * 2); c.fill();
             c.restore();
@@ -584,7 +721,7 @@ class Game {
         }
         if (this.slowT > 0) { c.save(); c.globalAlpha = 0.05; c.fillStyle = "#cc88ff"; c.fillRect(0, 0, CFG.W, CFG.H); c.restore(); }
         if (this.state !== STATE.NARRATION) drawHUD(c, this.crow, this.score, this.stageIdx, this.blueK); this.txt.draw(c);
-        if ([STATE.PLAYING, STATE.BOSS_FIGHT, STATE.BOSS_INTRO, STATE.STAGE_CLEAR].includes(this.state)) this.joystick.draw(c);
+        if ([STATE.PLAYING, STATE.BOSS_FIGHT, STATE.BOSS_INTRO, STATE.STAGE_CLEAR_FREEZE, STATE.STAGE_CLEAR].includes(this.state)) this.joystick.draw(c);
         if (this.state === STATE.GAME_OVER) drawGameOverScene(c, this);
         if (this.state === STATE.VICTORY) drawVictoryScene(c, this);
         if (this.fadeA > 0) { c.fillStyle = `rgba(0,0,0,${this.fadeA})`; c.fillRect(0, 0, CFG.W, CFG.H); }
@@ -609,10 +746,12 @@ class Game {
 
     /** 1フレームの例外でループが止まり「画面が落ちる」のを防ぐ。コンソールに [CROW] で原因が出る。 */
     loop(timestamp) {
-        if (this._lastLoopTime > 0) this._adaptiveQuality(timestamp - this._lastLoopTime);
+        const deltaMs = this._lastLoopTime > 0 ? timestamp - this._lastLoopTime : 0;
+        if (deltaMs > 0) this._adaptiveQuality(deltaMs);
         this._lastLoopTime = timestamp;
+        const dt = deltaMs > 0 ? Math.min(deltaMs / 1000, DT_CAP) : 1 / FPS_BASE;
         try {
-            this.update();
+            this.update(dt);
         } catch (e) {
             console.error('[CROW] update error:', e);
         }
