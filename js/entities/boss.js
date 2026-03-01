@@ -35,9 +35,10 @@ class Boss {
         const hpScale = 2 * Math.pow(1.1, idx);
         if (idx === 6) {
             const baseHp = Math.floor((sd.bossHpBase || 660) / 3);
-            /* form0: ×1.4（40%固く・重い物質イメージ）, form1: ×2, form2: ×3 */
+            /* form0: ×1.4, form1: ×2, form2: ×3。form1/2は防御力20%アップで実質1.2倍耐久 */
             const formMul = this.form === 0 ? 1.4 : (this.form === 1 ? 2 : 3);
-            this.maxHp = Math.floor(baseHp * formMul * hpScale);
+            const defMul = (this.form === 1 || this.form === 2) ? 1.2 : 1;
+            this.maxHp = Math.floor(baseHp * formMul * hpScale * defMul);
             this.hp = this.maxHp;
         } else {
             const base = sd.bossHpBase || 220;
@@ -49,7 +50,8 @@ class Boss {
         this.name = sd.bossName; this.color = sd.bossColor; this.hitFlash = 0;
         this.anim = new Anim({ IDLE: { frames: 4, loop: true, speed: 0.7 }, CHARGE: { frames: 4, loop: false, speed: 1.5 }, ATTACK: { frames: 4, loop: false, speed: 1.2 }, HIT: { frames: 3, loop: false, speed: 1 }, DEATH: { frames: 4, loop: false, speed: 0.6 } });
         this.atkCD = 0; this.chargeTarget = null;
-        this.atkSpd = (sd.bossAtkSpd || 1.0) * (idx === 6 && this.form === 1 ? 2 : idx === 6 && this.form === 2 ? 3 : 1) * (idx === 1 ? 1.1 : 1);
+        const formSpd = idx === 6 && this.form === 1 ? 2 * 1.15 : idx === 6 && this.form === 2 ? 3 * 1.15 : 1;
+        this.atkSpd = (sd.bossAtkSpd || 1.0) * formSpd * (idx === 1 ? 1.1 : 1);
         this.laserWarn = 0; this.laserAngle = 0; this.clones = []; this.cloneCD = 0;
         this._drawW = 80; this._drawH = 80;
         this.introT = 0; this.introDone = false; this.INTRO_DUR = 60;
@@ -118,6 +120,7 @@ class Boss {
         }
         if (idx === 6) {
             this.voidTeleportCD = 0; this.voidAfterimages = []; this.VOID_AFTERIMAGE_LIFE = 180;
+            if (this.form === 1 || this.form === 2) this._voidSpeedMul = 1.15;
         }
     }
     get hitRadius() {
@@ -139,33 +142,34 @@ class Boss {
         } else if (kind === 'big') { opts.sound.playBossBig(); }
         else if (kind === 'charge') { opts.sound.playBossCharge(); }
     }
-    update(px, py, bullets, enemies, fx, sd) {
-        if (this.anim.state === 'DEATH') { this.deathT++; this.anim.update(); if (this.anim.done) this.active = false; return; }
+    update(px, py, bullets, enemies, fx, sd, opts, d) {
+        if (d == null || d <= 0) d = 1;
+        if (this.anim.state === 'DEATH') { this.deathT += d; this.anim.update(d); if (this.anim.done) this.active = false; return; }
         this.berserk = this.hp <= this.maxHp * 0.3;
-        this.timer++; this.anim.update();
+        this.timer += d; this.anim.update(d);
         if (!this.arrived) {
             if (this.idx === 1) {
-                this.x = this.tx; this.y = Math.min(this.ty, this.y + 3.5);
+                this.x = this.tx; this.y = Math.min(this.ty, this.y + 3.5 * d);
                 if (this.y >= this.ty) { this.y = this.ty; this.arrived = true; }
             } else {
-                this.x += (this.tx - this.x) * 0.03; this.y += (this.ty - this.y) * 0.03;
+                this.x += (this.tx - this.x) * 0.03 * d; this.y += (this.ty - this.y) * 0.03 * d;
                 if (Math.abs(this.x - this.tx) < 5) this.arrived = true;
             }
             return;
         }
-        if (!this.introDone) { this.introT++; if (this.introT >= this.INTRO_DUR) this.introDone = true; return; }
-        if (this.lastStandFreezeT > 0) { this.lastStandFreezeT--; return; }
-        this._bossShotCD = Math.max(0, (this._bossShotCD || 0) - 1);
-        const opts = arguments[6] || {};
-        if (this.idx === 0) { this.updateBoss1(px, py, bullets, fx, opts); if (this.hitFlash > 0) this.hitFlash--; return; }
-        if (this.idx === 1) { this.updateBoss2(px, py, bullets, enemies, fx, sd, opts); if (this.hitFlash > 0) this.hitFlash--; return; }
-        if (this.idx === 2) { this.updateBossMimic(px, py, bullets, fx, opts); if (this.hitFlash > 0) this.hitFlash--; return; }
-        if (this.idx === 3) { this.updateBossIronWing(px, py, bullets, fx, opts); if (this.hitFlash > 0) this.hitFlash--; return; }
-        if (this.idx === 4) { this.updateBossGuardian(px, py, bullets, fx, opts); if (this.hitFlash > 0) this.hitFlash--; return; }
-        if (this.idx === 5) { this.updateBossBluecore(px, py, bullets, fx, opts); if (this.hitFlash > 0) this.hitFlash--; return; }
-        if (this.idx === 6) { this.updateBossVoid(px, py, bullets, fx, opts); if (this.hitFlash > 0) this.hitFlash--; return; }
+        if (!this.introDone) { this.introT += d; if (this.introT >= this.INTRO_DUR) this.introDone = true; return; }
+        if (this.lastStandFreezeT > 0) { this.lastStandFreezeT -= d; return; }
+        this._bossShotCD = Math.max(0, (this._bossShotCD || 0) - d);
+        opts = opts || {};
+        if (this.idx === 0) { this.updateBoss1(px, py, bullets, fx, opts, d); if (this.hitFlash > 0) this.hitFlash -= d; return; }
+        if (this.idx === 1) { this.updateBoss2(px, py, bullets, enemies, fx, sd, opts, d); if (this.hitFlash > 0) this.hitFlash -= d; return; }
+        if (this.idx === 2) { this.updateBossMimic(px, py, bullets, fx, opts, d); if (this.hitFlash > 0) this.hitFlash -= d; return; }
+        if (this.idx === 3) { this.updateBossIronWing(px, py, bullets, fx, opts, d); if (this.hitFlash > 0) this.hitFlash -= d; return; }
+        if (this.idx === 4) { this.updateBossGuardian(px, py, bullets, fx, opts, d); if (this.hitFlash > 0) this.hitFlash -= d; return; }
+        if (this.idx === 5) { this.updateBossBluecore(px, py, bullets, fx, opts, d); if (this.hitFlash > 0) this.hitFlash -= d; return; }
+        if (this.idx === 6) { this.updateBossVoid(px, py, bullets, fx, opts, d); if (this.hitFlash > 0) this.hitFlash -= d; return; }
         const formStatMul = (this.idx === 6 && this.form === 1) ? 2 : (this.idx === 6 && this.form === 2) ? 3 : 1;
-        this.phaseT++;
+        this.phaseT += d;
         const phaseDurBase = Math.max(160, 280 - this.idx * 18);
         let phaseDur = this.berserk ? Math.floor(phaseDurBase * 0.6) : phaseDurBase;
         if (this.idx === 6 && formStatMul > 1) phaseDur = Math.max(40, Math.floor(phaseDur / formStatMul));
@@ -177,7 +181,7 @@ class Boss {
         const bulletMul = (1 + this.idx * 0.15) * (this.berserk ? 1.35 : 1) * formStatMul;
         const bulletColor = this.berserk ? "#ff4466" : this.color;
         if (this.phase === 0) {
-            this.atkCD--; const intv = Math.max(6, Math.round((22 - this.idx * 2) / this.atkSpd));
+            this.atkCD -= d; const intv = Math.max(6, Math.round((22 - this.idx * 2) / this.atkSpd));
             if (this.atkCD <= 0) {
                 this.atkCD = intv; this.anim.set('ATTACK');
                 const n = 6 + this.idx * 2, baseAngle = this.timer * 0.025;
@@ -192,8 +196,8 @@ class Boss {
             }
         } else if (this.phase === 1) {
             if (!this.chargeTarget) this.chargeTarget = { x: px, y: py };
-            const dx = this.chargeTarget.x - this.x, dy = this.chargeTarget.y - this.y, d = Math.hypot(dx, dy) || 1, cSpd = 7 + this.idx * 0.6;
-            if (d > 30) { this.x += dx / d * cSpd; this.y += dy / d * cSpd; this.anim.set('CHARGE'); }
+            const dx = this.chargeTarget.x - this.x, dy = this.chargeTarget.y - this.y, dist = Math.hypot(dx, dy) || 1, cSpd = 7 + this.idx * 0.6;
+            if (dist > 30) { this.x += (dx / dist) * cSpd * d; this.y += (dy / dist) * cSpd * d; this.anim.set('CHARGE'); }
             else {
                 this.chargeTarget = null; fx.burst(this.x, this.y, this.color, 18 + this.idx * 2, 5);
                 const burst = 10 + this.idx * 3, spd = (2.6 + this.idx * 0.2) * bulletMul;
@@ -201,8 +205,9 @@ class Boss {
                 if (this.idx >= 4) for (let i = 0; i < burst; i++) { const a = (Math.PI * 2 / burst) * i + 0.2; bullets.push({ x: this.x, y: this.y, vx: Math.cos(a) * spd * 0.85, vy: Math.sin(a) * spd * 0.85, active: true, color: bulletColor, r: 3 }); }
             }
         } else if (this.phase === 2) {
-            if (this.phaseT % Math.max(50, 110 - this.idx * 12) === 0) { enemies.push(new Enemy(CFG.W + 30, rr(60, CFG.H - 80), sd, false, this.idx)); if (this.idx >= 5) enemies.push(new Enemy(CFG.W + 40, rr(80, CFG.H - 100), sd, false, this.idx)); }
-            this.atkCD--; const intv2 = Math.max(12, Math.round((45 - this.idx * 4) / this.atkSpd));
+            const spawnIntv = Math.max(50, 110 - this.idx * 12);
+            if (Math.floor(this.phaseT / spawnIntv) > Math.floor((this.phaseT - d) / spawnIntv)) { enemies.push(new Enemy(CFG.W + 30, rr(60, CFG.H - 80), sd, false, this.idx)); if (this.idx >= 5) enemies.push(new Enemy(CFG.W + 40, rr(80, CFG.H - 100), sd, false, this.idx)); }
+            this.atkCD -= d; const intv2 = Math.max(12, Math.round((45 - this.idx * 4) / this.atkSpd));
             if (this.atkCD <= 0) {
                 this.atkCD = intv2; const dx = px - this.x, dy = py - this.y, d = Math.hypot(dx, dy) || 1, spd = (3.2 + this.idx * 0.35) * bulletMul;
                 const rays = 1 + Math.min(this.idx, 3);
@@ -212,7 +217,7 @@ class Boss {
                 }
             }
         } else if (this.phase === 3) {
-            this.atkCD--; const spiralIntv = Math.max(2, 5 - Math.floor(this.idx / 2));
+            this.atkCD -= d; const spiralIntv = Math.max(2, 5 - Math.floor(this.idx / 2));
             if (this.atkCD <= 0) {
                 this.atkCD = spiralIntv; const baseSpd = (2.2 + this.idx * 0.18) * bulletMul;
                 const spirals = this.idx >= 2 ? 2 : 1;
@@ -239,7 +244,8 @@ class Boss {
     }
     takeDamage(amt, fx) {
         let actual = amt;
-        if (this.idx === 5 && this.snowQueenGuard) actual = Math.floor(amt * (1 - 0.85));
+        if (this.idx === 6 && (this.form === 1 || this.form === 2)) actual = Math.floor(amt * (1 / 1.2));
+        if (this.idx === 5 && this.snowQueenGuard) actual = Math.floor(actual * (1 - 0.85));
         const wasAbove10 = this.hp > this.maxHp * 0.1;
         this.hp -= actual;
         this.hitFlash = 4;
@@ -254,11 +260,7 @@ class Boss {
             }
             this.anim.set('DEATH'); this.deathT = 0; fx.big(this.x, this.y, this.color); return;
         }
-        if (this.idx === 3 && this.hp <= this.maxHp * 0.2 && actual > 80 && !this.ironWingBreakdownTriggered) {
-            this.ironWingBreakdownTriggered = true;
-            this.ironWingPhase = 'breakdown';
-            this.ironWingPhaseT = 0;
-        }
+        // ボス4「追い詰めで左下へ行く」分岐は無効化（breakdown 遷移を削除）
         if (wasAbove10 && this.hp <= this.maxHp * 0.1 && !this.lastStandTriggered) {
             this.lastStandTriggered = true;
             this.lastStandFreezeT = 90;
@@ -279,7 +281,8 @@ class Boss {
     }
 
     /** ボス1: 穢れの先兵・彷徨う巨骸 — 骨弾バースト / 骨の指弾 / テイルスウィング / 紫炎噴射 / 突進。攻撃派手・120%サイズ */
-    updateBoss1(px, py, bullets, fx, opts) {
+    updateBoss1(px, py, bullets, fx, opts, d) {
+        if (d == null) d = 1;
         const W = CFG.W; const H = CFG.H;
         const purple = '#9B59B6'; const purpleGlow = '#D7BDE2'; const flame = '#F39C12';
         const lrSpeed = (this.berserk ? 1.4 : 1) * (2.2 / 60 * 10);
@@ -469,7 +472,8 @@ class Boss {
     }
 
     /** ボス2: 三角ロボ — 3フェーズ(降下→normal→enraged)。回転アニメ・3way/5way/追尾/8方向スプレッド */
-    updateBoss2(px, py, bullets, enemies, fx, sd, opts) {
+    updateBoss2(px, py, bullets, enemies, fx, sd, opts, d) {
+        if (d == null) d = 1;
         const W = CFG.W; const H = CFG.H;
         const green = '#00ff44'; const greenGlow = '#66ff88'; const rage = '#ff4400'; const orange = '#ff8800';
 
@@ -617,7 +621,8 @@ class Boss {
     }
 
     /** ボス3面: 擬態する知性・ミミック — テレポート・ノイズ・サンダー・ミラー・データ侵食波・紫赤青ジグザグビーム・4旋回コア・追い詰め体当たり→後退 */
-    updateBossMimic(px, py, bullets, fx, opts) {
+    updateBossMimic(px, py, bullets, fx, opts, d) {
+        if (d == null) d = 1;
         const W = CFG.W; const H = CFG.H;
         const purple = '#7B00FF'; const purpleLight = '#C39BFF';
         const red = '#FF4444'; const blue = '#4488FF';
@@ -900,7 +905,8 @@ class Boss {
     }
 
     /** ボス4面: 鉄の翼 Iron Wing — PATROL(突進付き) / SPREAD / DIVE_PREP→DIVE→BOUNCE / SPIRAL / BREAKDOWN→TAUNT→RIPOSTE / LAST_GASP */
-    updateBossIronWing(px, py, bullets, fx, opts) {
+    updateBossIronWing(px, py, bullets, fx, opts, d) {
+        if (d == null) d = 1;
         const W = CFG.W; const H = CFG.H;
         const red = '#dc1e1e'; const darkRed = '#8c0000'; const orange = '#ff8c00'; const yellow = '#ffff00';
 
@@ -911,9 +917,9 @@ class Boss {
         } else if (!this.ironWingRage) {
             this.ironWingDiveSpeed = 26;
         }
-        this.ironWingPhaseT++;
-        this.ironWingWaveT += 0.03;
-        this.ironWingFrameTimer++;
+        this.ironWingPhaseT += d;
+        this.ironWingWaveT += 0.03 * d;
+        this.ironWingFrameTimer += d;
         const dur = (this.ironWingFrameDurationsTicks || [11, 7, 7, 8, 12, 8, 7, 7])[this.ironWingSeqIndex];
         if (this.ironWingFrameTimer >= dur) {
             this.ironWingFrameTimer = 0;
@@ -1177,7 +1183,8 @@ class Boss {
     }
 
     /** ボス5面: 鋼甲蟲 SCARABOT — 3×2スプライト / IDLE→PATROL(3way散弾)→ENRAGED(50%以下・5way+レーザー)＋虫らしい縄張り移動・ドームシールド・狂乱ダッシュ */
-    updateBossGuardian(px, py, bullets, fx, opts) {
+    updateBossGuardian(px, py, bullets, fx, opts, d) {
+        if (d == null) d = 1;
         const W = CFG.W; const H = CFG.H;
         const cyan = '#00ffff';
 
@@ -1385,7 +1392,8 @@ class Boss {
     }
 
     /** ボス6面: 雪の女王 Snow Queen — 猛攻撃化。Phase1(90f間隔) / Phase2(60f・プリズム/分裂/ダイヤモンドダスト)。ガード85%軽減・CD400 */
-    updateBossBluecore(px, py, bullets, fx, opts) {
+    updateBossBluecore(px, py, bullets, fx, opts, d) {
+        if (d == null) d = 1;
         const W = CFG.W; const H = CFG.H;
         const ice = '#64C8FF'; const iceLight = '#C8EBFF';
 
@@ -1570,7 +1578,8 @@ class Boss {
     }
 
     /** ボス7面: 裂け目そのもの・ヴォイド — オムニウスゲイズ / ボイドフラグメント / ネオンクラック / ディメンショナルパルス / アイスパウン。ピンチでヴォイドアポカリプス */
-    updateBossVoid(px, py, bullets, fx, opts) {
+    updateBossVoid(px, py, bullets, fx, opts, d) {
+        if (d == null) d = 1;
         const W = CFG.W; const H = CFG.H;
         const voidColor = '#8E44AD'; const neon = '#BB8FCE'; const fragmentColor = '#1A1A2E';
 
@@ -1611,14 +1620,15 @@ class Boss {
             this.voidAfterimages = (this.voidAfterimages || []).filter(a => a.t > 0);
         }
 
+        const spdMul = (this._voidSpeedMul != null) ? this._voidSpeedMul : 1;
         if (this.form === 1) {
-            /* ラスボス2: ぴょんぴょん跳ねる移動（重力＋バウンス） */
-            this.bounceVy = (this.bounceVy || 0) + 0.28;
+            /* ラスボス2: ぴょんぴょん跳ねる移動（重力＋バウンス）。スピード15%アップ */
+            this.bounceVy = (this.bounceVy || 0) + 0.28 * spdMul;
             this.ty += this.bounceVy;
-            if (this.ty > H * 0.56) { this.ty = H * 0.56; this.bounceVy = -(6 + Math.random() * 3); if (fx.shake !== undefined) fx.shake = Math.max(fx.shake || 0, 8); }
+            if (this.ty > H * 0.56) { this.ty = H * 0.56; this.bounceVy = -(6 + Math.random() * 3) * spdMul; if (fx.shake !== undefined) fx.shake = Math.max(fx.shake || 0, 8); }
             if (this.ty < H * 0.14) { this.ty = H * 0.14; this.bounceVy = Math.abs(this.bounceVy) * 0.5; }
             /* 左右もゆっくりプレイヤーへ寄る */
-            this.tx += (clamp(px, 120, W - 120) - this.tx) * 0.006;
+            this.tx += (clamp(px, 120, W - 120) - this.tx) * 0.006 * spdMul;
             this.x = this.tx + Math.sin(this.timer * 0.018) * (50 * formMul);
             this.y = this.ty + Math.sin(this.timer * 0.03) * 12;
         } else if (this.form === 0) {
@@ -1635,7 +1645,7 @@ class Boss {
             this.y = this.ty + Math.cos(this.timer * 0.012) * (35 * formMul);
         }
         if (this.form === 2) {
-            const t = this.timer * 0.01;
+            const t = this.timer * 0.01 * spdMul;
             const chaos = (a, b, c) => Math.sin(a * t) * Math.cos(b * t + 1.3) + Math.sin(c * t * 0.7) * 0.5;
             this.x = this.tx + chaos(0.012, 0.017, 0.023) * (W * 0.32) + chaos(0.008, 0.011, 0.013) * (W * 0.1);
             this.y = this.ty + chaos(0.014, 0.019, 0.007) * (H * 0.2) + chaos(0.01, 0.016, 0.022) * (H * 0.08);

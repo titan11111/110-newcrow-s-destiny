@@ -10,7 +10,7 @@ const ri = global.CrowDestiny.ri;
 const RELIC_TYPES = [
     { id: "CHALICE", name: "聖杯", color: "#44ff44", effect: "HEAL", icon: "cross", iconIndex: 0, desc: "体力を30回復する。" },
     { id: "CROSS", name: "聖十字架", color: "#aaeeff", effect: "BARRIER", icon: "shield", iconIndex: 1, desc: "1発だけ被弾を防ぐ障壁（約8秒）。" },
-    { id: "TOME", name: "予言書", color: "#cc88ff", effect: "SLOW", icon: "hourglass", iconIndex: 2, desc: "時間が緩む演出（約6秒）。" },
+    { id: "TOME", name: "予言書", color: "#cc88ff", effect: "SLOW", icon: "hourglass", iconIndex: 2, desc: "敵の動きが半分になり、約8秒間持続する。" },
     { id: "FLAME", name: "聖火", color: "#ff4400", effect: "BOMB", icon: "explosion", iconIndex: 3, desc: "画面上の敵に大ダメージを与える。" }
 ];
 
@@ -19,8 +19,9 @@ class Relic {
         this.x = x; this.y = y; this.vy = 0; this.active = true;
         this.type = RELIC_TYPES[ri(0, RELIC_TYPES.length)]; this.timer = 0;
     }
-    update(spd) {
-        this.timer++; this.x -= spd; this.y += Math.sin(this.timer * 0.06) * 0.5;
+    update(spd, d) {
+        if (d == null) d = 1;
+        this.timer += d; this.x -= spd * d; this.y += Math.sin(this.timer * 0.06) * 0.5 * d;
         if (this.x < -50 || this.timer > 600) this.active = false;
     }
     draw(c) {

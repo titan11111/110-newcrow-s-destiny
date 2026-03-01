@@ -15,8 +15,9 @@ class Obstacle {
         this.type = type; this.color = color; this.glowColor = glowColor;
         this.active = true; this.timer = 0; this.stageIdx = stageIdx; this.dangerous = true;
     }
-    update(spd) {
-        this.x -= spd; this.timer++;
+    update(spd, d) {
+        if (d == null) d = 1;
+        this.x -= spd * d; this.timer += d;
         if (this.x < -this.w - 60) this.active = false;
         this.dangerous = this.type === "LASER" ? Math.sin(this.timer * 0.06) > 0 : true;
     }

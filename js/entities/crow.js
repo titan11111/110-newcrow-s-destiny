@@ -38,9 +38,12 @@ class Crow {
         /** 分身カラスの描画・射撃用の遅延位置 */
         this.cloneX = 0; this.cloneY = 0;
     }
-    update(keys) {
+    update(keys, dt, opts) {
+        if (dt == null || dt <= 0) dt = 1;
+        const canShoot = !opts || opts.canShoot !== false;
+        const noClampRight = opts && opts.noClampRight === true;
         if (this.anim.state === 'KO') return;
-        if (this.anim.state === 'HIT' && !this.anim.done) { this.anim.update(); return; }
+        if (this.anim.state === 'HIT' && !this.anim.done) { this.anim.update(dt); return; }
         let mx = 0, my = 0;
         if (keys['JoystickX'] !== undefined && keys['JoystickY'] !== undefined) {
             mx = keys['JoystickX'];
@@ -60,7 +63,7 @@ class Crow {
             if (this.soundManager && this.soundManager.playDash) this.soundManager.playDash();
         }
         if (this.dashing) {
-            this.dashT--;
+            this.dashT -= dt;
             this.vx = this.facing * CFG.DASH_SPD; this.vy = my * CFG.DASH_SPD * 0.5;
             this.dashTrail.push({ x: this.x + this.w / 2, y: this.y + this.h / 2, life: this.DASH_TRAIL_LIFE, vx: this.vx, vy: this.vy });
             if (this.dashT <= 0) this.dashing = false;
@@ -80,14 +83,16 @@ class Crow {
                 this.vy = targetVy;
             }
         }
-        this.dashTrail.forEach(p => p.life--);
-        this.dashTrail = this.dashTrail.filter(p => p.life > 0);
+        this.dashTrail.forEach(p => { if (p && typeof p.life === 'number') p.life -= dt; });
+        const removeInactive = global.CrowDestiny.removeInactive;
+        if (removeInactive) removeInactive(this.dashTrail, p => p && typeof p.life === 'number' && p.life > 0);
+        else this.dashTrail = this.dashTrail.filter(p => p && typeof p.life === 'number' && p.life > 0);
         if (this.dashCharges < maxCharges) {
-            if (this.dashChargeCD > 0) { this.dashChargeCD--; if (this.dashChargeCD <= 0) { this.dashCharges++; if (this.dashCharges < maxCharges) this.dashChargeCD = chargeCD; } }
+            if (this.dashChargeCD > 0) { this.dashChargeCD -= dt; if (this.dashChargeCD <= 0) { this.dashCharges++; if (this.dashCharges < maxCharges) this.dashChargeCD = chargeCD; } }
         }
-        for (let i = 0; i < 7; i++) if (this.bossAbilityCD[i] > 0) this.bossAbilityCD[i]--;
+        for (let i = 0; i < 7; i++) if (this.bossAbilityCD[i] > 0) this.bossAbilityCD[i] -= dt;
         if (this.cloneCrowT > 0) {
-            this.cloneCrowT--;
+            this.cloneCrowT -= dt;
             /* 位置履歴を蓄積（最大20フレーム保持） */
             this.posHistory.push({ x: this.x, y: this.y });
             if (this.posHistory.length > 20) this.posHistory.shift();
@@ -102,20 +107,27 @@ class Crow {
             this.posHistory = [];
         }
         /* 左右どちらの入力でも向きは変えない（常に右向き） */
-        this.x += this.vx; this.y += this.vy;
-        this.x = clamp(this.x, CFG.MARGIN, CFG.W - this.w - CFG.MARGIN);
-        this.y = clamp(this.y, CFG.MARGIN, CFG.H - this.h - CFG.MARGIN);
-        if (this.inv > 0) this.inv--; if (this.barrier > 0) this.barrier--;
+        this.x += this.vx * dt; this.y += this.vy * dt;
+        if (noClampRight) {
+            this.x = Math.max(CFG.MARGIN, this.x);
+            this.y = clamp(this.y, CFG.MARGIN, CFG.H - this.h - CFG.MARGIN);
+        } else {
+            this.x = clamp(this.x, CFG.MARGIN, CFG.W - this.w - CFG.MARGIN);
+            this.y = clamp(this.y, CFG.MARGIN, CFG.H - this.h - CFG.MARGIN);
+        }
+        if (this.inv > 0) this.inv -= dt; if (this.barrier > 0) this.barrier -= dt;
         if (!this.dashing) this.anim.set('FLY');
-        this.anim.update();
-        this.shootT++;
-        const intv = Math.max(4, 14 - this.weaponLevel * 2);
-        if (this.shootT >= intv) {
-            this.shootT = 0;
-            this.shoot();
-            /* 分身カラス（灰スキル）: 本体と同タイミングで自動射撃 */
-            if (this.cloneCrowT > 0) this._cloneShoot();
-            if (this.soundManager && this.soundManager.playShoot) this.soundManager.playShoot();
+        this.anim.update(dt);
+        if (canShoot) {
+            this.shootT += dt;
+            const intv = Math.max(4, 14 - this.weaponLevel * 2);
+            if (this.shootT >= intv) {
+                this.shootT = 0;
+                this.shoot();
+                /* 分身カラス（灰スキル）: 本体と同タイミングで自動射撃 */
+                if (this.cloneCrowT > 0) this._cloneShoot();
+                if (this.soundManager && this.soundManager.playShoot) this.soundManager.playShoot();
+            }
         }
         /* HP30%以下は赤ビーム攻撃（回復で通常に戻る） */
         if (this.hp < this.maxHp) this.hp = Math.min(this.maxHp, this.hp + 0.005);
