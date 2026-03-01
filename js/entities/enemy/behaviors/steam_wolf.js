@@ -17,7 +17,8 @@ const DIST_RUSH = 130;
 const DIST_FIRE = 220;
 const DIST_LAUNCHER = 350;
 
-function updateSteamWolf(e, px, py, bullets, scrollSpd) {
+function updateSteamWolf(e, px, py, bullets, scrollSpd, d) {
+    if (d == null) d = 1;
     if (!e.spriteFrame) e.spriteFrame = { col: 0, row: 0 };
     const sf = e.spriteFrame;
     const smin = e.sd.enemyShootMin || 60;
@@ -31,9 +32,9 @@ function updateSteamWolf(e, px, py, bullets, scrollSpd) {
     if (e.steamWolfTension == null) e.steamWolfTension = 0;
     if (e.steamWolfVy == null) e.steamWolfVy = 0;
     e.groundY = e.groundY != null ? e.groundY : e.y;
-    e.attackCooldown--;
-    e.steamWolfBreathTimer += 0.1;
-    e.steamWolfTension *= 0.95;
+    e.attackCooldown -= d;
+    e.steamWolfBreathTimer += 0.1 * d;
+    e.steamWolfTension *= Math.pow(0.95, d);
 
     const dist = Math.hypot(px - e.x, py - e.y);
     const moveSpeed = 0.9;
@@ -43,8 +44,8 @@ function updateSteamWolf(e, px, py, bullets, scrollSpd) {
         case 'PATROL':
             sf.row = 0;
             sf.col = Math.floor(e.timer / WALK_FRAME_DUR) % COLS;
-            e.x -= moveSpeed;
-            e.x -= scrollSpd;
+            e.x -= moveSpeed * d;
+            e.x -= scrollSpd * d;
             e.y = groundY + Math.sin(e.steamWolfBreathTimer) * 2;
             e.y = clamp(e.y, CFG.MARGIN, CFG.H - e.h - CFG.MARGIN);
 
@@ -70,8 +71,8 @@ function updateSteamWolf(e, px, py, bullets, scrollSpd) {
         case 'CLAW_PREP':
             sf.row = 2;
             sf.col = 0;
-            e.x -= scrollSpd;
-            e.steamWolfTimer++;
+            e.x -= scrollSpd * d;
+            e.steamWolfTimer += d;
             if (e.steamWolfTimer >= 8) {
                 e.steamWolfState = 'CLAW_ATTACK';
                 e.steamWolfTimer = 0;
@@ -81,9 +82,9 @@ function updateSteamWolf(e, px, py, bullets, scrollSpd) {
         case 'CLAW_ATTACK':
             sf.row = 2;
             sf.col = 1;
-            if (e.steamWolfTimer === 0) e.x -= 4;
-            e.x -= scrollSpd;
-            e.steamWolfTimer++;
+            if (e.steamWolfTimer === 0) e.x -= 4 * d;
+            e.x -= scrollSpd * d;
+            e.steamWolfTimer += d;
             if (e.steamWolfTimer >= 6) {
                 e.steamWolfConsecutiveClaw = (e.steamWolfConsecutiveClaw || 0) + 1;
                 if (e.steamWolfConsecutiveClaw < 3 && Math.random() < 0.3) {
@@ -102,10 +103,10 @@ function updateSteamWolf(e, px, py, bullets, scrollSpd) {
         case 'RUSH_PREP':
             sf.row = 2;
             sf.col = 0;
-            e.x -= 0.3;
-            e.x -= scrollSpd;
-            e.y += (groundY + 8 - e.y) * 0.2;
-            e.steamWolfTimer++;
+            e.x -= 0.3 * d;
+            e.x -= scrollSpd * d;
+            e.y += (groundY + 8 - e.y) * 0.2 * d;
+            e.steamWolfTimer += d;
             if (e.steamWolfTimer >= 15) {
                 e.steamWolfState = 'RUSH_ATTACK';
                 e.steamWolfTimer = 0;
@@ -116,12 +117,12 @@ function updateSteamWolf(e, px, py, bullets, scrollSpd) {
         case 'RUSH_ATTACK':
             sf.row = 2;
             sf.col = 1;
-            if (e.steamWolfTimer === 0) e.x -= 2.5;
-            e.x -= scrollSpd;
-            e.steamWolfVy += 0.25;
-            e.y += e.steamWolfVy;
+            if (e.steamWolfTimer === 0) e.x -= 2.5 * d;
+            e.x -= scrollSpd * d;
+            e.steamWolfVy += 0.25 * d;
+            e.y += e.steamWolfVy * d;
             if (e.y >= groundY) { e.y = groundY; e.steamWolfVy = 0; }
-            e.steamWolfTimer++;
+            e.steamWolfTimer += d;
             if (e.steamWolfTimer >= 20) {
                 e.steamWolfState = 'COOLDOWN';
                 e.steamWolfTimer = 0;
@@ -132,9 +133,9 @@ function updateSteamWolf(e, px, py, bullets, scrollSpd) {
         case 'FIRE_PREP':
             sf.row = 1;
             sf.col = Math.min(1, Math.floor(e.steamWolfTimer / 6));
-            e.x -= moveSpeed * 0.3;
-            e.x -= scrollSpd;
-            e.steamWolfTimer++;
+            e.x -= moveSpeed * 0.3 * d;
+            e.x -= scrollSpd * d;
+            e.steamWolfTimer += d;
             if (e.steamWolfTimer >= 12) {
                 e.steamWolfState = 'FIRE_ATTACK';
                 e.steamWolfTimer = 0;
@@ -144,10 +145,10 @@ function updateSteamWolf(e, px, py, bullets, scrollSpd) {
         case 'FIRE_ATTACK':
             sf.row = 1;
             sf.col = 2;
-            e.x -= moveSpeed * 0.3;
-            e.x -= scrollSpd;
-            if (e.steamWolfTimer === 3) shootSteamWolfFanFire(e, px, py, bullets);
-            e.steamWolfTimer++;
+            e.x -= moveSpeed * 0.3 * d;
+            e.x -= scrollSpd * d;
+            if ((e.steamWolfTimer - d < 3) && (e.steamWolfTimer >= 3)) shootSteamWolfFanFire(e, px, py, bullets);
+            e.steamWolfTimer += d;
             if (e.steamWolfTimer >= 18) {
                 e.steamWolfState = 'COOLDOWN';
                 e.steamWolfTimer = 0;
@@ -158,9 +159,9 @@ function updateSteamWolf(e, px, py, bullets, scrollSpd) {
         case 'LAUNCHER_PREP':
             sf.row = 1;
             sf.col = 0;
-            e.x -= 0.2;
-            e.x -= scrollSpd;
-            e.steamWolfTimer++;
+            e.x -= 0.2 * d;
+            e.x -= scrollSpd * d;
+            e.steamWolfTimer += d;
             if (e.steamWolfTimer >= 24) {
                 e.steamWolfState = 'LAUNCHER_ATTACK';
                 e.steamWolfTimer = 0;
@@ -170,10 +171,10 @@ function updateSteamWolf(e, px, py, bullets, scrollSpd) {
         case 'LAUNCHER_ATTACK':
             sf.row = 1;
             sf.col = Math.min(2, Math.floor(e.steamWolfTimer / 4) + 1);
-            e.x -= 0.4;
-            e.x -= scrollSpd;
-            if (e.steamWolfTimer === 5) shootSteamWolfLauncher(e, px, py, bullets);
-            e.steamWolfTimer++;
+            e.x -= 0.4 * d;
+            e.x -= scrollSpd * d;
+            if ((e.steamWolfTimer - d < 5) && (e.steamWolfTimer >= 5)) shootSteamWolfLauncher(e, px, py, bullets);
+            e.steamWolfTimer += d;
             if (e.steamWolfTimer >= 16) {
                 e.steamWolfState = 'COOLDOWN';
                 e.steamWolfTimer = 0;
@@ -184,10 +185,10 @@ function updateSteamWolf(e, px, py, bullets, scrollSpd) {
         case 'COOLDOWN':
             sf.row = 2;
             sf.col = 2;
-            e.x -= moveSpeed * 0.5;
-            e.x -= scrollSpd;
+            e.x -= moveSpeed * 0.5 * d;
+            e.x -= scrollSpd * d;
             e.y = groundY + Math.sin(e.steamWolfBreathTimer) * 2;
-            e.steamWolfTimer++;
+            e.steamWolfTimer += d;
             if (e.steamWolfTimer >= 14) {
                 e.attackCooldown = e.attackCooldown > 0 ? e.attackCooldown : ri(smin, smax);
                 e.steamWolfState = 'PATROL';

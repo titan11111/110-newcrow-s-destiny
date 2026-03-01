@@ -9,7 +9,8 @@ const clamp = global.CrowDestiny.clamp;
 const ri = global.CrowDestiny.ri;
 const rr = global.CrowDestiny.rr;
 
-function updateGargoyle(e, px, py, bullets, scrollSpd, fx) {
+function updateGargoyle(e, px, py, bullets, scrollSpd, fx, d) {
+    if (d == null) d = 1;
     const bt = e.behaviorType || 'CHARGE';
     const smin = e.sd.enemyShootMin || 60;
     const smax = e.sd.enemyShootMax || 130;
@@ -21,7 +22,7 @@ function updateGargoyle(e, px, py, bullets, scrollSpd, fx) {
         sinAmp = 6;
         if (e.timer % 40 === 0) e.gargoyleJumpT = 8;
         if ((e.gargoyleJumpT || 0) > 0) {
-            e.gargoyleJumpT--;
+            e.gargoyleJumpT -= d;
             const jumpPhase = 1 - e.gargoyleJumpT / 8;
             e.y = e.baseY - Math.sin(jumpPhase * Math.PI) * 18;
             if (e.gargoyleJumpT === 1 && fx) fx.shake = Math.max(fx.shake || 0, 4);
@@ -35,9 +36,9 @@ function updateGargoyle(e, px, py, bullets, scrollSpd, fx) {
         const dist = (Math.min(t, 4) * 3.5 + Math.max(0, t - 4) * 1.2);
         e.y = clamp(e.baseY + zigDir * dist, CFG.MARGIN, CFG.H - e.h - CFG.MARGIN);
     }
-    e.x += vx;
-    e.x -= scrollSpd;
-    e.shootCD--;
+    e.x += vx * d;
+    e.x -= scrollSpd * d;
+    e.shootCD -= d;
     if (e.shootCD <= 0) {
         const fired = shootGargoyle(e, px, py, bullets);
         if (fired) e.shootCD = ri(smin, smax);

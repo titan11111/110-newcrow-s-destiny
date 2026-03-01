@@ -9,7 +9,8 @@ const clamp = global.CrowDestiny.clamp;
 const ri = global.CrowDestiny.ri;
 const rr = global.CrowDestiny.rr;
 
-function updateHomunculus(e, px, py, bullets, scrollSpd) {
+function updateHomunculus(e, px, py, bullets, scrollSpd, d) {
+    if (d == null) d = 1;
     const bt = e.behaviorType || 'ORBIT';
     const smin = e.sd.enemyShootMin || 60;
     const smax = e.sd.enemyShootMax || 130;
@@ -30,15 +31,15 @@ function updateHomunculus(e, px, py, bullets, scrollSpd) {
         e.y = e.baseY + Math.sin(e.timer * 0.03) * 35 + Math.sin(e.timer * 0.07) * 8;
     } else {
         if ((e.spitRecoilT || 0) > 0) {
-            e.spitRecoilT--;
+            e.spitRecoilT -= d;
             vx = -0.6;
         }
         e.y = e.baseY + Math.sin(e.timer * 0.04) * sinAmp;
     }
-    e.x += vx;
-    e.x -= scrollSpd;
-    if ((e.haloGlowT || 0) > 0) e.haloGlowT--;
-    e.shootCD--;
+    e.x += vx * d;
+    e.x -= scrollSpd * d;
+    if ((e.haloGlowT || 0) > 0) e.haloGlowT -= d;
+    e.shootCD -= d;
     if (e.shootCD <= 0) {
         const fired = shootHomunculus(e, px, py, bullets);
         if (fired) e.shootCD = bt === 'SPIT' ? ri(Math.max(20, Math.floor(smin / 2)), Math.floor(smax * 0.6)) : ri(smin, smax);

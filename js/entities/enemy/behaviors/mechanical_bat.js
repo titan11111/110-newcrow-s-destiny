@@ -14,7 +14,8 @@ const MOVE_FRAME_DUR = 4;
 const COLS = 3;
 const ROWS = 3;
 
-function updateMechanicalBat(e, px, py, bullets, scrollSpd) {
+function updateMechanicalBat(e, px, py, bullets, scrollSpd, d) {
+    if (d == null) d = 1;
     if (!e.spriteFrame) e.spriteFrame = { col: 0, row: 0 };
     const sf = e.spriteFrame;
     const smin = e.sd.enemyShootMin || 60;
@@ -24,15 +25,15 @@ function updateMechanicalBat(e, px, py, bullets, scrollSpd) {
     if (!e.mechBatTimer) e.mechBatTimer = 0;
     if (e.attackCooldown == null) e.attackCooldown = 0;
     e.baseY = e.baseY != null ? e.baseY : e.y;
-    e.attackCooldown--;
+    e.attackCooldown -= d;
 
     const moveSpeed = 1.8;
     const waveAmp = 28;
     const wavePeriod = 2.2;
     const waveFreq = (Math.PI * 2) / wavePeriod;
 
-    e.x -= moveSpeed;
-    e.x -= scrollSpd;
+    e.x -= moveSpeed * d;
+    e.x -= scrollSpd * d;
     e.y = e.baseY + Math.sin(e.timer * 0.04 * wavePeriod) * waveAmp;
     e.y = clamp(e.y, CFG.MARGIN, CFG.H - e.h - CFG.MARGIN);
 
@@ -58,7 +59,7 @@ function updateMechanicalBat(e, px, py, bullets, scrollSpd) {
         case 'CHARGE':
             sf.row = 2;
             sf.col = 0;
-            e.mechBatTimer--;
+            e.mechBatTimer -= d;
             if (e.mechBatTimer <= 0) {
                 e.mechBatState = 'ATTACK';
                 e.mechBatTimer = 4;
@@ -69,7 +70,7 @@ function updateMechanicalBat(e, px, py, bullets, scrollSpd) {
         case 'ATTACK':
             sf.row = 2;
             sf.col = 1;
-            e.mechBatTimer--;
+            e.mechBatTimer -= d;
             if (e.mechBatTimer <= 0) {
                 e.mechBatState = 'RECOVER';
                 e.mechBatTimer = 8;
@@ -79,7 +80,7 @@ function updateMechanicalBat(e, px, py, bullets, scrollSpd) {
         case 'RECOVER':
             sf.row = 2;
             sf.col = 2;
-            e.mechBatTimer--;
+            e.mechBatTimer -= d;
             if (e.mechBatTimer <= 0) {
                 e.attackCooldown = ri(smin, smax);
                 e.mechBatState = 'PATROL';

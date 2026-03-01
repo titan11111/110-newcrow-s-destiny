@@ -8,7 +8,8 @@ const CFG = global.CrowDestiny.CFG;
 const ri = global.CrowDestiny.ri;
 const rr = global.CrowDestiny.rr;
 
-function updateCyborg(e, px, py, bullets, scrollSpd) {
+function updateCyborg(e, px, py, bullets, scrollSpd, d) {
+    if (d == null) d = 1;
     const bt = e.behaviorType || 'DIVE';
     const smin = e.sd.enemyShootMin || 60;
     const smax = e.sd.enemyShootMax || 130;
@@ -21,34 +22,34 @@ function updateCyborg(e, px, py, bullets, scrollSpd) {
             e.y = e.baseY + Math.sin(e.timer * 0.04) * sinAmp;
             if (e.timer % 35 === 0) { e.divePhase = 'error'; e.errorT = 8; }
         } else if (e.divePhase === 'error') {
-            e.errorT--;
+            e.errorT -= d;
             vx = 0;
-            e.x += rr(-2, 2);
-            e.y += rr(-2, 2);
+            e.x += rr(-2, 2) * d;
+            e.y += rr(-2, 2) * d;
             if (e.errorT <= 0) {
                 e.divePhase = 'dive';
                 e.diveTargetY = e.y + rr(40, 80);
                 e.diveT = 15;
             }
         } else {
-            e.diveT--;
+            e.diveT -= d;
             vx = -2.8;
-            e.y += (e.diveTargetY - e.y) * 0.25;
+            e.y += (e.diveTargetY - e.y) * 0.25 * d;
             if (e.diveT <= 0) { e.baseY = e.y; e.divePhase = 'walk'; }
         }
     } else {
         vx = -1.4; sinAmp = 28;
         if (e.timer % 12 === 0) e.freezeT = 2;
         if ((e.freezeT || 0) > 0) {
-            e.freezeT--;
+            e.freezeT -= d;
             vx = 0;
             e.showError = true;
         } else e.showError = false;
         e.y = e.baseY + Math.sin(e.timer * 0.04) * sinAmp;
     }
-    e.x += vx;
-    e.x -= scrollSpd;
-    e.shootCD--;
+    e.x += vx * d;
+    e.x -= scrollSpd * d;
+    e.shootCD -= d;
     if (e.shootCD <= 0) {
         const fired = shootCyborg(e, px, py, bullets);
         if (fired) e.shootCD = ri(smin, smax);

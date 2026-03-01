@@ -7,7 +7,8 @@
 const ri = global.CrowDestiny.ri;
 const rr = global.CrowDestiny.rr;
 
-function updateCosmic(e, px, py, bullets, scrollSpd) {
+function updateCosmic(e, px, py, bullets, scrollSpd, d) {
+    if (d == null) d = 1;
     const bt = e.behaviorType || 'SWARM';
     const smin = e.sd.enemyShootMin || 60;
     const smax = e.sd.enemyShootMax || 130;
@@ -25,7 +26,7 @@ function updateCosmic(e, px, py, bullets, scrollSpd) {
             e.shieldFlareT = 12;
         }
         if ((e.shieldFlareT || 0) > 0) {
-            e.shieldFlareT--;
+            e.shieldFlareT -= d;
             if (e.shieldFlareT <= 0) e.shieldFlare = false;
         }
         e.y = e.baseY + Math.sin(e.timer * sinFreq) * sinAmp;
@@ -34,7 +35,7 @@ function updateCosmic(e, px, py, bullets, scrollSpd) {
         sinAmp = 10; sinFreq = 0.02;
         if (e.timer % 45 === 22) e.voidStopT = 8;
         if ((e.voidStopT || 0) > 0) {
-            e.voidStopT--;
+            e.voidStopT -= d;
             vx = 0;
             e.ringPulse = 1 - e.voidStopT / 8;
         } else e.ringPulse = 0;
@@ -46,9 +47,9 @@ function updateCosmic(e, px, py, bullets, scrollSpd) {
         if (e.timer % 60 === 0) e.phaseOffset = (e.phaseOffset || 0) + rr(0.8, 1.6);
         e.y = e.baseY + Math.sin(e.timer * sinFreq + (e.phaseOffset || 0)) * sinAmp;
     }
-    e.x += vx;
-    e.x -= scrollSpd;
-    e.shootCD--;
+    e.x += vx * d;
+    e.x -= scrollSpd * d;
+    e.shootCD -= d;
     if (e.shootCD <= 0) {
         const fired = shootCosmicEntity(e, px, py, bullets);
         if (fired) e.shootCD = ri(smin, smax);

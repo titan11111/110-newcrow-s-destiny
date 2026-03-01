@@ -7,7 +7,8 @@
 const ri = global.CrowDestiny.ri;
 const rr = global.CrowDestiny.rr;
 
-function updateBeast(e, px, py, bullets, scrollSpd, fx) {
+function updateBeast(e, px, py, bullets, scrollSpd, fx, d) {
+    if (d == null) d = 1;
     const bt = e.behaviorType || 'STOMP';
     const smin = e.sd.enemyShootMin || 60;
     const smax = e.sd.enemyShootMax || 130;
@@ -37,26 +38,27 @@ function updateBeast(e, px, py, bullets, scrollSpd, fx) {
         e.y = e.territoryY + Math.sin(e.timer * 0.04) * 6;
         e.stompFrame = 0;
     }
-    e.x += vx;
-    e.x -= scrollSpd;
-    e.shootCD--;
+    e.x += vx * d;
+    e.x -= scrollSpd * d;
+    e.shootCD -= d;
     if (e.shootCD <= 0) {
-        const fired = shootBeast(e, px, py, bullets);
+        const fired = shootBeast(e, px, py, bullets, d);
         if (fired) e.shootCD = ri(smin, smax);
     }
 }
 
-function shootBeast(e, px, py, bullets) {
+function shootBeast(e, px, py, bullets, delta) {
     if (!e.beastChargeT) {
         e.beastChargeT = 12;
         e.stompFrame = 2;
         return false;
     }
-    e.beastChargeT--;
+    const dt = delta != null ? delta : 1;
+    e.beastChargeT -= dt;
     if (e.beastChargeT > 0) return false;
     e.beastChargeT = null;
     e.stompFrame = 3;
-    const dx = px - e.x, dy = py - e.y, d = Math.hypot(dx, dy) || 1;
+    const dx = px - e.x, dy = py - e.y, hyp = Math.hypot(dx, dy) || 1;
     if (e.behaviorType === 'STOMP') {
         let tx = px, ty = py;
         if (e.usePrediction && e.posHistory.length >= 30) {

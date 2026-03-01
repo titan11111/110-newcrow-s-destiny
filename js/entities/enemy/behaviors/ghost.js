@@ -11,7 +11,8 @@ const ri = global.CrowDestiny.ri;
 const rr = global.CrowDestiny.rr;
 const PURPLE_BEAM = '#7B00FF';
 
-function updateGhost(e, px, py, bullets, scrollSpd) {
+function updateGhost(e, px, py, bullets, scrollSpd, d) {
+    if (d == null) d = 1;
     const bt = e.behaviorType || 'TELEPORT';
     const smin = e.sd.enemyShootMin || 60;
     const smax = e.sd.enemyShootMax || 130;
@@ -19,8 +20,8 @@ function updateGhost(e, px, py, bullets, scrollSpd) {
     /** ゆっくりぐるぐる回転（奇妙さ強調） */
     e.rotationAngle = (e.rotationAngle || 0) + 0.014;
     if ((e.ghostAlphaRestoreIn || 0) > 0) {
-        e.ghostAlphaRestoreIn--;
-        if (e.ghostAlphaRestoreIn === 0) e.ghostAlpha = 1.0;
+        e.ghostAlphaRestoreIn -= d;
+        if (e.ghostAlphaRestoreIn <= 0) e.ghostAlpha = 1.0;
     }
     /** 奇妙さ: たまにアルファをわずかに揺らす */
     if (e.timer % 23 === 0 && e.ghostAlpha > 0.5) e.ghostAlpha = 0.72 + Math.random() * 0.2;
@@ -44,14 +45,14 @@ function updateGhost(e, px, py, bullets, scrollSpd) {
             e.glitchT = 3;
         }
         if ((e.glitchT || 0) > 0) {
-            e.glitchT--;
-            e.x += e.glitchOffsetX;
+            e.glitchT -= d;
+            e.x += e.glitchOffsetX * d;
         }
         e.y = e.baseY + Math.sin(e.timer * sinFreq) * sinAmp;
     }
-    e.x += vx;
-    e.x -= scrollSpd;
-    e.shootCD--;
+    e.x += vx * d;
+    e.x -= scrollSpd * d;
+    e.shootCD -= d;
     /** 紫のビームをランダムで発射（奇妙さ・不気味さ） */
     if (Math.random() < 0.013) shootPurpleBeam(e, px, py, bullets);
     if (e.shootCD <= 0) {

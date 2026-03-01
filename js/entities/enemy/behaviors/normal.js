@@ -8,14 +8,15 @@ const CFG = global.CrowDestiny.CFG;
 const ri = global.CrowDestiny.ri;
 const rr = global.CrowDestiny.rr;
 
-function updateNormal(e, px, py, bullets, scrollSpd, fx) {
+function updateNormal(e, px, py, bullets, scrollSpd, fx, d) {
+    if (d == null) d = 1;
     const bt = e.behaviorType || 'CHARGE';
     const smin = e.sd.enemyShootMin || 60;
     const smax = e.sd.enemyShootMax || 130;
     const isStage1 = e.sd && e.sd.id === 1;
 
     if (isStage1 && e.emergeT > 0 && (bt === 'CHARGE' || bt === 'ZIGZAG')) {
-        e.emergeT--;
+        e.emergeT -= d;
         const total = bt === 'CHARGE' ? 42 : 28;
         const r = 1 - e.emergeT / total;
         if (bt === 'CHARGE') {
@@ -27,9 +28,9 @@ function updateNormal(e, px, py, bullets, scrollSpd, fx) {
             e.y = e.baseY + wobble;
             e.vx = -0.2 - r * 0.4;
         }
-        e.x += e.vx;
-        e.x -= scrollSpd;
-        e.shootCD--;
+        e.x += e.vx * d;
+        e.x -= scrollSpd * d;
+        e.shootCD -= d;
         if (e.shootCD <= 0) {
             e.shootCD = ri(smin, smax);
             e.anim.set('ATTACK');
@@ -58,10 +59,10 @@ function updateNormal(e, px, py, bullets, scrollSpd, fx) {
         default: break;
     }
     e.vx = vx;
-    e.x += e.vx;
+    e.x += e.vx * d;
     e.y = e.baseY + Math.sin(e.timer * sinFreq) * sinAmp;
-    e.x -= scrollSpd;
-    e.shootCD--;
+    e.x -= scrollSpd * d;
+    e.shootCD -= d;
     if (e.shootCD <= 0) {
         e.anim.set('ATTACK');
         const spd = e.bulletSpd;

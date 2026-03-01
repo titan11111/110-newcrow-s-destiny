@@ -9,7 +9,8 @@ const ri = global.CrowDestiny.ri;
 const rr = global.CrowDestiny.rr;
 const BLUE_MOVE_PATTERNS = global.CrowDestiny.EnemyConfig.BLUE_MOVE_PATTERNS;
 
-function updateBlue(e, px, py, bullets, scrollSpd) {
+function updateBlue(e, px, py, bullets, scrollSpd, d) {
+    if (d == null) d = 1;
     const pt = BLUE_MOVE_PATTERNS[e.blueMoveType ?? 0] || 'STRAIGHT';
     const smin = e.sd.enemyShootMin || 50;
     const smax = e.sd.enemyShootMax || 100;
@@ -36,11 +37,11 @@ function updateBlue(e, px, py, bullets, scrollSpd) {
         default: break;
     }
     e.vx = vx;
-    e.x += e.vx;
-    if (vy !== 0) e.y += vy;
+    e.x += e.vx * d;
+    if (vy !== 0) e.y += vy * d;
     if (sinAmp !== 0 && pt !== 'TRACK' && pt !== 'SCATTER_MOVE') e.y = e.baseY + Math.sin(e.timer * sinFreq) * sinAmp;
-    e.x -= scrollSpd;
-    e.shootCD--;
+    e.x -= scrollSpd * d;
+    e.shootCD -= d;
     if (e.shootCD <= 0) {
         e.shootCD = ri(smin, smax);
         e.anim.set('ATTACK');
