@@ -47,11 +47,15 @@ ObjectPool.prototype.releaseAll = function () {
     while (this.active.length > 0) this.release(this.active[0]);
 };
 
+/** 敵弾の同時存在上限（ステージ6等で画面が弾だらけになるのを防ぐ） */
+const MAX_ACTIVE_BULLETS = 220;
+
 /** 敵弾用: プールから取得して props をマージ。bullets.push({...}) の代わりに使う配列風アダプタ */
 function createBulletPoolAdapter(pool) {
     return {
         _pool: pool,
         push: function (props) {
+            if (this._pool.active.length >= MAX_ACTIVE_BULLETS) return null;
             const b = this._pool.get();
             b.x = 0; b.y = 0; b.vx = 0; b.vy = 0; b.active = true; b.color = '#fff'; b.r = 5;
             if (props) Object.assign(b, props);

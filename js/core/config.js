@@ -79,7 +79,7 @@ const BGM_ASSETS = {
     boss7: 'audio/boss7.mp3',
     lastboss1: 'audio/lastboss.mp3',
     lastboss2: 'audio/lastboss2.mp3',
-    ending: 'audio/endding.mp3',
+    ending: 'audio/ending.mp3',
     gameover: 'audio/gameover.mp3'
 };
 
