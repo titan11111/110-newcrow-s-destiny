@@ -59,29 +59,30 @@ class Enemy {
             ? (this.behaviorType === 'CHARGE' ? 42 : 28) : 0;
     }
 
-    update(px, py, bullets, scrollSpd, fx) {
+    update(px, py, bullets, scrollSpd, fx, d) {
+        if (d == null || d <= 0) d = 1;
         if (this.anim.state === 'DEATH') {
-            this.anim.update();
+            this.anim.update(d);
             if (this.anim.done) this.active = false;
             return;
         }
-        this.timer++;
-        this.anim.update();
+        this.timer += d;
+        this.anim.update(d);
         this.posHistory.push({ x: px, y: py });
         if (this.posHistory.length > 30) this.posHistory.shift();
 
-        if (this.isBlue) B.updateBlue(this, px, py, bullets, scrollSpd);
-        else if (this.spriteKey === 'enemy2') B.updateGargoyle(this, px, py, bullets, scrollSpd, fx);
-        else if (this.spriteKey === 'enemy3') B.updateGhost(this, px, py, bullets, scrollSpd);
-        else if (this.spriteKey === 'steam_wolf') B.updateSteamWolf(this, px, py, bullets, scrollSpd);
-        else if (this.spriteKey === 'mechanical_bat') B.updateMechanicalBat(this, px, py, bullets, scrollSpd);
-        else if (this.spriteKey === 'enemy5') B.updateCyborg(this, px, py, bullets, scrollSpd);
-        else if (this.spriteKey === 'enemy6') B.updateBeast(this, px, py, bullets, scrollSpd, fx);
-        else if (this.spriteKey === 'enemy7') B.updateCosmic(this, px, py, bullets, scrollSpd);
-        else B.updateNormal(this, px, py, bullets, scrollSpd, fx);
+        if (this.isBlue) B.updateBlue(this, px, py, bullets, scrollSpd, d);
+        else if (this.spriteKey === 'enemy2') B.updateGargoyle(this, px, py, bullets, scrollSpd, fx, d);
+        else if (this.spriteKey === 'enemy3') B.updateGhost(this, px, py, bullets, scrollSpd, d);
+        else if (this.spriteKey === 'steam_wolf') B.updateSteamWolf(this, px, py, bullets, scrollSpd, d);
+        else if (this.spriteKey === 'mechanical_bat') B.updateMechanicalBat(this, px, py, bullets, scrollSpd, d);
+        else if (this.spriteKey === 'enemy5') B.updateCyborg(this, px, py, bullets, scrollSpd, d);
+        else if (this.spriteKey === 'enemy6') B.updateBeast(this, px, py, bullets, scrollSpd, fx, d);
+        else if (this.spriteKey === 'enemy7') B.updateCosmic(this, px, py, bullets, scrollSpd, d);
+        else B.updateNormal(this, px, py, bullets, scrollSpd, fx, d);
 
         if (this.anim.state === 'ATTACK' && this.anim.done) this.anim.set('FLOAT');
-        if (this.hitFlash > 0) this.hitFlash--;
+        if (this.hitFlash > 0) this.hitFlash -= d;
         if (this.x < -80) this.active = false;
     }
 
@@ -94,8 +95,8 @@ class Enemy {
         }
     }
 
-    draw(c) {
-        if (drawEnemy) drawEnemy(this, c);
+    draw(c, game) {
+        if (drawEnemy) drawEnemy(this, c, game && game.qualityEffect != null ? game.qualityEffect : 1);
     }
 
     get cx() { return this.x; }

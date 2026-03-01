@@ -9,8 +9,10 @@ const HORIZONTAL_FLOAT_6 = global.CrowDestiny.EnemyConfig.HORIZONTAL_FLOAT_6;
 const FLOAT_FRAME_INTERVAL = global.CrowDestiny.EnemyConfig.FLOAT_FRAME_INTERVAL;
 const ENEMY6_TOTAL_FRAMES = global.CrowDestiny.EnemyConfig.ENEMY6_TOTAL_FRAMES || 5;
 
-function drawEnemy(e, c) {
+function drawEnemy(e, c, qualityEffect) {
     if (!e.active) return;
+    if (qualityEffect == null) qualityEffect = 1;
+    const useHeavyEffect = qualityEffect >= 0.5;
     const IMG = global.CrowDestiny && global.CrowDestiny.IMG;
     const f = e.anim.frame;
     const s = e.anim.state;
@@ -22,6 +24,10 @@ function drawEnemy(e, c) {
         const layout = SPRITE_LAYOUTS[e.spriteKey];
         if (!layout) return;
         const sh = IMG[e.spriteKey];
+        /* 画像未読み込み・破損時はスプライト描画をスキップしフォールバックへ（ステージ6等の白いE化を防ぐ） */
+        if (!sh.naturalWidth || !sh.naturalHeight) {
+            /* fall through to fallback below */
+        } else {
         const sw = sh.naturalWidth || layout.fallbackW || 1584;
         const shh = sh.naturalHeight || layout.fallbackH || 672;
         const COLS = layout.cols;
@@ -61,7 +67,7 @@ function drawEnemy(e, c) {
                 c.globalAlpha = alpha;
             }
             c.drawImage(sh, srcX, srcY, cropW, cropH, -fw / 2, -fh / 2, fw, fh);
-            if (e.anim.state !== 'DEATH') {
+            if (e.anim.state !== 'DEATH' && useHeavyEffect) {
                 c.globalCompositeOperation = 'screen';
                 c.globalAlpha = 0.15;
                 c.fillStyle = '#00ff88';
@@ -91,7 +97,7 @@ function drawEnemy(e, c) {
                 c.scale(-scale, scale);
             }
             c.drawImage(sh, sourceX, 0, frameWidth, frameHeight, -frameWidth / 2, -frameHeight / 2, frameWidth, frameHeight);
-            if (e.anim.state !== 'DEATH') {
+            if (e.anim.state !== 'DEATH' && useHeavyEffect) {
                 c.globalCompositeOperation = 'screen';
                 c.shadowColor = '#4488ff';
                 c.shadowBlur = 6;
@@ -138,7 +144,7 @@ function drawEnemy(e, c) {
                 c.scale(-scale, scale);
             }
             c.drawImage(sh, srcX, srcY, fw, fh, -fw / 2, -fh / 2, fw, fh);
-            if (e.anim.state !== 'DEATH') {
+            if (e.anim.state !== 'DEATH' && useHeavyEffect) {
                 c.globalCompositeOperation = 'screen';
                 c.shadowColor = e.spriteKey === 'steam_wolf' ? '#ff8844' : '#00cc88';
                 c.shadowBlur = 6;
@@ -174,7 +180,7 @@ function drawEnemy(e, c) {
             c.scale(-scale, scale);
         }
         c.drawImage(sh, srcX, srcY, cropW, cropH, -fw / 2, -fh / 2, fw, fh);
-        if (e.anim.state !== 'DEATH') {
+        if (e.anim.state !== 'DEATH' && useHeavyEffect) {
             c.globalCompositeOperation = 'screen';
             c.shadowColor = '#4488ff';
             c.shadowBlur = 6;
@@ -239,6 +245,7 @@ function drawEnemy(e, c) {
         }
         c.restore();
         return;
+        }
     }
 
     c.save();
