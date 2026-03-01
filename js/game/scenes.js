@@ -158,7 +158,7 @@ function drawGameOver(c, game) {
     if (game.stateT > 90) {
         c.globalAlpha = 0.5 + Math.sin(game.frame * 0.05) * 0.3;
         c.font = "18px serif";
-        c.fillText("— SPACE / START で再挑戦 —", CFG.W / 2, CFG.H / 2 + 60);
+        c.fillText("— SPACE / START でこのステージから再挑戦 —", CFG.W / 2, CFG.H / 2 + 60);
     }
     c.textAlign = "left";
 }

@@ -25,7 +25,8 @@ function checkCollisions(game) {
             if (!en.active || en.anim.state === 'DEATH') continue;
             const bulletR = (f.isBeam || f.isGalaxy) ? (f.isGalaxy ? 64 : 56) : 48;
             if (distSquared(f.x, f.y, en.x, en.y) < bulletR * bulletR) {
-                en.takeDamage((f.isBeam || f.isGalaxy) ? 14 + (cr.weaponLevel - 1) * 2 : 8 + (cr.weaponLevel - 1) * 2, fx);
+                const dmg = f.damage != null ? f.damage : (f.isBeam || f.isGalaxy) ? 14 + (cr.weaponLevel - 1) * 2 : 8 + (cr.weaponLevel - 1) * 2;
+                en.takeDamage(dmg, fx);
                 sound.playHit();
                 f.active = false;
                 if (en.hp <= 0) {
@@ -47,7 +48,8 @@ function checkCollisions(game) {
             if (boss.idx === 4 && boss.domeShieldT > 0) {
                 f.active = false;
             } else {
-                boss.takeDamage((f.isBeam || f.isGalaxy) ? 10 + cr.weaponLevel : 6 + cr.weaponLevel, fx);
+                const bossDmg = f.damage != null ? f.damage : (f.isBeam || f.isGalaxy) ? 10 + cr.weaponLevel : 6 + cr.weaponLevel;
+                boss.takeDamage(bossDmg, fx);
                 sound.playHit();
                 f.active = false;
             }
@@ -121,12 +123,46 @@ function checkCollisions(game) {
         }
     }
 
+    // 灰オーブ（灰スキル3）→ 敵・ボス（小ダメージ・ゆっくり回転拡散）
+    const grayOrbR = 14;
+    const grayOrbR2 = grayOrbR * grayOrbR;
+    const grayOrbs = game.grayOrbs || [];
+    for (const o of grayOrbs) {
+        if (!o.active) continue;
+        for (const en of enemies) {
+            if (!en.active || en.anim.state === 'DEATH') continue;
+            if (distSquared(o.x, o.y, en.x + (en.w || 20) / 2, en.y + (en.h || 16) / 2) < grayOrbR2) {
+                en.takeDamage(o.damage != null ? o.damage : 3, fx);
+                sound.playHit();
+                o.active = false;
+                if (en.hp <= 0) {
+                    game.score += en.isBlue ? 500 : 100;
+                    if (en.isBlue && en.spriteKey !== 'enemy2') {
+                        game.blueK++;
+                        fx.burst(en.x, en.y, "#44aaff", 30, 7);
+                        txt.show(`蒼穢 浄化 (${game.blueK}/3)`, "#44aaff", 80, 24, CFG.W / 2, 100);
+                    }
+                    if (Math.random() < (en.isBlue ? 0.5 : 0.15)) relics.push(new Relic(en.x, en.y));
+                }
+                break;
+            }
+        }
+        if (!o.active) continue;
+        if (boss && boss.active && boss.arrived && distSquared(o.x, o.y, boss.x, boss.y) < (boss.hitRadius + grayOrbR) * (boss.hitRadius + grayOrbR)) {
+            if (boss.idx !== 4 || boss.domeShieldT <= 0) {
+                boss.takeDamage(o.damage != null ? o.damage : 3, fx);
+                sound.playHit();
+            }
+            o.active = false;
+        }
+    }
+
     // 雪（白スキル）→ 敵・ボス
     const snowR = 14;
     const snowR2 = snowR * snowR;
     const snowParticles = game.snowParticles || [];
     for (const s of snowParticles) {
-        if (!s.active || s.life % 4 !== 0) continue;
+        if (!s.active || Math.floor(s.life) % 4 !== 0) continue;
         const dmg = s.damage != null ? s.damage : 3;
         for (const en of enemies) {
             if (!en.active || en.anim.state === 'DEATH') continue;
@@ -172,16 +208,14 @@ function checkCollisions(game) {
     }
 
     // ボス → プレイヤー（体当たり）
-    if (boss && boss.active && boss.arrived && distSquared(boss.x, boss.y, cr.cx, cr.cy) < boss.playerHitRadius * boss.playerHitRadius) {
+        if (boss && boss.active && boss.arrived && distSquared(boss.x, boss.y, cr.cx, cr.cy) < boss.playerHitRadius * boss.playerHitRadius) {
         if (boss.idx === 0 && boss.dashT > 0) fx.shake = Math.max(fx.shake || 0, 25);
-        // ボス5 電撃虫：発狂時は全身帯電で接触即死級の高ダメージ
-        const contactDmg = (boss.idx === 4 && boss.berserk) ? 28 : 15;
+        // ボス5 電撃虫：発狂時は全身帯電で接触即死級の高ダメージ。ラスボスform1/2は攻撃力10%アップ
+        let contactDmg = (boss.idx === 4 && boss.berserk) ? 28 : 15;
+        if (boss.idx === 6 && (boss.form === 1 || boss.form === 2)) contactDmg = Math.ceil(contactDmg * 1.1);
         cr.takeDamage(contactDmg, fx);
         if (boss.idx === 4 && boss.berserk) fx.shake = Math.max(fx.shake || 0, 20);
-        // ボス4 鉄の翼：ダイブ突進ヒット時はヴァンパイアバイト（微量回復）
-        if (boss.idx === 3 && boss.ironWingPhase === 'dive') {
-            boss.hp = Math.min(boss.maxHp, (boss.hp || 0) + 8);
-        }
+        // ボス4 鉄の翼：回復なし（ヴァンパイアバイト削除）
     }
 
     // ボス5: 電撃虫ガーディアン — ドームシールド中の電撃フィールド＋発狂時は全身帯電（近づくだけでダメージ）

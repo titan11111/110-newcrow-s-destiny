@@ -19,6 +19,8 @@ const BLUE_Y_MIN = CFG.BLUE_SPAWN_Y_MIN ?? 80;
 const BLUE_Y_MAX = CFG.H - (CFG.BLUE_SPAWN_Y_MAX_OFFSET ?? 100);
 const STAGES_WITH_SPRITE = [1, 2, 3, 4, 5, 6];
 const SPRITE_CHANCE = 0.3;
+/** 同時出現する敵の上限（ステージ6等で画面が埋まるのを防ぐ） */
+const MAX_ENEMIES_ON_SCREEN = 28;
 /** 4面( stageIdx 3 ): スチームウルフ30% / 通常60% / 青穢10% */
 const STAGE3_STEAM_WOLF_RATIO = 0.3;
 const STAGE3_BLUE_RATIO = 0.1;
@@ -28,9 +30,9 @@ const STAGE3_BLUE_RATIO = 0.1;
  */
 function spawnEnemies(game) {
     if (game.arena) return;
+    if ((game.enemies && game.enemies.length >= MAX_ENEMIES_ON_SCREEN)) return;
     const sd = game.sd;
 
-    game.eCD--;
     if (game.eCD <= 0) {
         game.eCD = ri(sd.spawnMin || 40, sd.spawnMax || 80);
         let useSprite;
@@ -41,7 +43,9 @@ function spawnEnemies(game) {
                 game.enemies.push(new Enemy(SPAWN_RIGHT, blueY, sd, true, game.stageIdx, false));
                 return;
             }
-            useSprite = r < STAGE3_BLUE_RATIO + STAGE3_STEAM_WOLF_RATIO;
+            /* blueK>=3 の場合は青穢枠をスチームウルフに換算しない。別ロールで判定 */
+            const adjustedR = (r < STAGE3_BLUE_RATIO && game.blueK >= 3) ? Math.random() : r;
+            useSprite = adjustedR < STAGE3_BLUE_RATIO + STAGE3_STEAM_WOLF_RATIO;
         } else {
             useSprite = STAGES_WITH_SPRITE.indexOf(game.stageIdx) >= 0 && (game.stageIdx === 4 || Math.random() < SPRITE_CHANCE);
         }
@@ -76,7 +80,6 @@ function spawnEnemies(game) {
     }
 
     if (game.blueK < 3 && game.stageIdx !== 3) {
-        game.blueCD--;
         if (game.blueCD <= 0) {
             game.blueCD = ri(280, 480);
             /** 2面では青穢にガーゴイル(enemy2)スプライトを使わない。ガーゴイル＝通常敵のみ。4面は10%ロールでスポーン済み。 */
@@ -93,7 +96,6 @@ function spawnEnemies(game) {
  */
 function spawnObstacles(game) {
     if (game.arena) return;
-    game.obsCD--;
     if (game.obsCD <= 0) {
         game.obsCD = ri(80, 180);
         game.obstacles.push(spawnObstacle(game.stageIdx));
