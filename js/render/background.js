@@ -30,15 +30,16 @@ class Background {
         this.tGndC = hex2rgb(sd.ground); this.tLnC = hex2rgb(sd.gLine);
         this.bgType = sd.bgType;
     }
-    update() {
+    update(d) {
+        if (d == null || d <= 0) d = 1;
         const s = this.scrolling ? this.speed : 0;
-        this.scrollX += s;
+        this.scrollX += s * d;
         this.topC = lerpC(this.topC, this.tTopC, 0.02);
         this.botC = lerpC(this.botC, this.tBotC, 0.02);
         this.gndC = lerpC(this.gndC, this.tGndC, 0.02);
         this.lnC = lerpC(this.lnC, this.tLnC, 0.02);
-        this.far.forEach(o => { o.x -= s * 0.3; if (o.x < -120) { o.x = CFG.W + ri(50, 250); o.y = rr(40, 400); } });
-        this.mid.forEach(o => { o.x -= s * 0.65; if (o.x < -120) { o.x = CFG.W + ri(50, 250); o.y = rr(250, 460); } });
+        this.far.forEach(o => { o.x -= s * 0.3 * d; if (o.x < -120) { o.x = CFG.W + ri(50, 250); o.y = rr(40, 400); } });
+        this.mid.forEach(o => { o.x -= s * 0.65 * d; if (o.x < -120) { o.x = CFG.W + ri(50, 250); o.y = rr(250, 460); } });
     }
     draw(c) {
         const g = c.createLinearGradient(0, 0, 0, CFG.H);

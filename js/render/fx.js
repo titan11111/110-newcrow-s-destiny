@@ -7,6 +7,7 @@
 const CFG = global.CrowDestiny.CFG;
 const rr = global.CrowDestiny.rr;
 const ri = global.CrowDestiny.ri;
+const ObjectPool = global.CrowDestiny.ObjectPool;
 
 class Particle {
     constructor(x, y, vx, vy, col, life, sz) {
@@ -14,9 +15,11 @@ class Particle {
         this.col = col; this.life = life; this.ml = life;
         this.sz = sz || rr(3, 7); this.on = true;
     }
-    update() {
-        this.x += this.vx; this.y += this.vy; this.vy += 0.015;
-        if (--this.life <= 0) this.on = false;
+    update(d) {
+        if (d == null) d = 1;
+        this.x += this.vx * d; this.y += this.vy * d; this.vy += 0.015 * d;
+        this.life -= d;
+        if (this.life <= 0) this.on = false;
     }
     draw(c) {
         c.save();
@@ -27,10 +30,20 @@ class Particle {
     }
 }
 
+function createParticle() {
+    return new Particle(0, 0, 0, 0, '#fff', 1, 3);
+}
+function resetParticle(p) {
+    p.on = true;
+    p.x = 0; p.y = 0; p.vx = 0; p.vy = 0;
+    p.col = '#fff'; p.life = 1; p.ml = 1; p.sz = 3;
+}
+
 class FX {
     constructor(gameRef) {
         this.gameRef = gameRef || null;
-        this.p = [];
+        this.particlePool = new ObjectPool(createParticle, resetParticle, 80);
+        this.p = this.particlePool.active;
         this.shake = 0;
         this.flash = 0;
         this.fCol = "#fff";
@@ -49,7 +62,9 @@ class FX {
         for (let i = 0; i < n; i++) {
             const a = Math.random() * Math.PI * 2;
             const s = Math.random() * spd;
-            this.p.push(new Particle(x, y, Math.cos(a) * s, Math.sin(a) * s, col, life + ri(0, 15)));
+            const pt = this.particlePool.get();
+            pt.x = x; pt.y = y; pt.vx = Math.cos(a) * s; pt.vy = Math.sin(a) * s;
+            pt.col = col; pt.life = life + ri(0, 15); pt.ml = pt.life; pt.sz = rr(3, 7); pt.on = true;
         }
     }
     big(x, y, col) {
@@ -66,19 +81,30 @@ class FX {
     addArenaDebris(x, y, vx, vy, life, col, w = 8, h = 4) {
         this.arenaDebris.push({ x, y, vx, vy, life, maxL: life, col, w, h });
     }
-    update() {
-        for (let i = this.p.length - 1; i >= 0; i--) {
-            this.p[i].update();
-            if (!this.p[i].on) this.p.splice(i, 1);
+    update(d) {
+        if (d == null) d = 1;
+        const removeInactive = global.CrowDestiny && global.CrowDestiny.removeInactive;
+        let i = this.p.length - 1;
+        while (i >= 0) {
+            this.p[i].update(d);
+            if (!this.p[i].on) {
+                this.particlePool.release(this.p[i]);
+            } else {
+                i--;
+            }
         }
-        if (this.shake > 0) this.shake *= 0.9;
-        if (this.flash > 0) this.flash--;
-        this.floorCracks = this.floorCracks.filter(f => { f.t--; return f.t > 0; });
-        if (this.arenaDarkCorners > 0) this.arenaDarkCorners--;
-        this.arenaDebris = this.arenaDebris.filter(d => { d.x += d.vx; d.y += d.vy; d.life--; return d.life > 0; });
-        if (this.arenaFreeze > 0) this.arenaFreeze--;
+        if (this.shake > 0) this.shake *= Math.pow(0.9, d);
+        if (this.flash > 0) this.flash -= d;
+        this.floorCracks.forEach(f => { f.t -= d; });
+        if (removeInactive) removeInactive(this.floorCracks, f => f.t > 0);
+        else this.floorCracks = this.floorCracks.filter(f => f.t > 0);
+        if (this.arenaDarkCorners > 0) this.arenaDarkCorners -= d;
+        this.arenaDebris.forEach(o => { o.x += o.vx * d; o.y += o.vy * d; o.life -= d; });
+        if (removeInactive) removeInactive(this.arenaDebris, o => o.life > 0);
+        else this.arenaDebris = this.arenaDebris.filter(o => o.life > 0);
+        if (this.arenaFreeze > 0) this.arenaFreeze -= d;
     }
-    draw(c) { this.p.forEach(p => p.draw(c)); }
+    draw(c) { this.particlePool.active.forEach(p => p.draw(c)); }
     applyShake(c) {
         if (this.shake > 0.5) c.translate((Math.random() - 0.5) * this.shake, (Math.random() - 0.5) * this.shake);
     }
@@ -149,9 +175,11 @@ class TextOverlay {
     show(t, col, dur, sz, x, y) {
         this.m.push({ t, col: col || "#e0cda7", dur, md: dur, sz: sz || 28, x: x ?? CFG.W / 2, y: y || CFG.H / 2 });
     }
-    update() {
+    update(d) {
+        if (d == null) d = 1;
         for (let i = this.m.length - 1; i >= 0; i--) {
-            if (--this.m[i].dur <= 0) this.m.splice(i, 1);
+            this.m[i].dur -= d;
+            if (this.m[i].dur <= 0) this.m.splice(i, 1);
         }
     }
     draw(c) {
@@ -171,9 +199,11 @@ class TextOverlay {
 class EffectOverlay {
     constructor() { this.fx = []; }
     add(type, col, dur) { this.fx.push({ type, col, dur, md: dur, t: 0 }); }
-    update() {
+    update(d) {
+        if (d == null) d = 1;
         for (let i = this.fx.length - 1; i >= 0; i--) {
-            if (++this.fx[i].t >= this.fx[i].md) this.fx.splice(i, 1);
+            this.fx[i].t += d;
+            if (this.fx[i].t >= this.fx[i].md) this.fx.splice(i, 1);
         }
     }
     draw(c, crow) {
@@ -192,10 +222,12 @@ class EffectOverlay {
                 c.globalAlpha = a * 0.15; c.strokeStyle = "#44ff44"; c.lineWidth = 8;
                 c.strokeRect(0, 0, CFG.W, CFG.H);
             } else if (e.type === "BARRIER") {
-                c.globalAlpha = a * 0.6; c.strokeStyle = "#aaeeff"; c.lineWidth = 3;
-                c.beginPath(); c.arc(crow.cx, crow.cy, 30 + p * 25, 0, Math.PI * 2); c.stroke();
+                const remain = e.md - e.t;
+                const alpha = remain <= 20 ? (remain / 20) * 0.6 : 0.6;
+                c.globalAlpha = alpha; c.strokeStyle = "#aaeeff"; c.lineWidth = 3;
+                c.beginPath(); c.arc(crow.cx, crow.cy, 32, 0, Math.PI * 2); c.stroke();
                 c.strokeStyle = "rgba(170,238,255,0.2)"; c.lineWidth = 10;
-                c.beginPath(); c.arc(crow.cx, crow.cy, 30 + p * 40, 0, Math.PI * 2); c.stroke();
+                c.beginPath(); c.arc(crow.cx, crow.cy, 38, 0, Math.PI * 2); c.stroke();
             } else if (e.type === "SLOW") {
                 c.globalAlpha = a * 0.2; c.fillStyle = "#cc88ff"; c.fillRect(0, 0, CFG.W, CFG.H);
                 c.globalAlpha = a * 0.8; c.translate(CFG.W / 2, CFG.H / 2); c.scale(2.5 - p * 1.5, 2.5 - p * 1.5);

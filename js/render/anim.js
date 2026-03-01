@@ -21,10 +21,12 @@ class Anim {
         this.t = 0;
         this.done = false;
     }
-    update() {
+    update(d) {
+        if (d == null || d <= 0) d = 1;
         const s = this.st[this.cur];
         const spd = s.speed || 1;
-        if (++this.t >= Math.max(1, Math.floor(FRAME_DUR / spd))) {
+        this.t += d;
+        if (this.t >= Math.max(1, Math.floor(FRAME_DUR / spd))) {
             this.t = 0;
             this.f++;
             if (this.f >= (s.frames || 4)) {
