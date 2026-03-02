@@ -8,6 +8,8 @@ const CFG = global.CrowDestiny.CFG;
 const IMG = global.CrowDestiny.IMG;
 const Anim = global.CrowDestiny.Anim;
 const clamp = global.CrowDestiny.clamp;
+/** shadowBlur 禁止フラグ（iOS / 低FPS時に true） */
+const ns = () => global.CrowDestiny.noShadow;
 
 class Crow {
     constructor(soundManager = null) {
@@ -197,7 +199,7 @@ class Crow {
             const angle = Math.atan2(vy, vx);
             const len = 12 + (1 - a) * 8;
             c.save();
-            c.translate(p.x, p.y);
+            c.translate(Math.floor(p.x), Math.floor(p.y));
             c.rotate(angle);
             /* 後方に伸びる炎/水流のストリーク（青白・ムテキ） */
             const g = c.createLinearGradient(-len, 0, len, 0);
@@ -232,7 +234,7 @@ class Crow {
         /* ダッシュ中: カラスが光る（青白のグロー＋輪郭） */
         if (this.dashing) {
             c.save();
-            c.translate(cx, cy);
+            c.translate(Math.floor(cx), Math.floor(cy));
             const pulse = 0.6 + Math.sin(this.dashT * 0.8) * 0.2;
             c.globalAlpha = pulse * 0.5;
             c.strokeStyle = '#aaddff';
@@ -246,12 +248,12 @@ class Crow {
             c.restore();
         }
         if (this.inv > 0 && this.inv % 4 > 1) c.globalAlpha = 0.35;
-        c.translate(cx, cy); c.scale(this.facing / 3, 1 / 3);
+        c.translate(Math.floor(cx), Math.floor(cy)); c.scale(this.facing / 3, 1 / 3);
         const f = this.anim.frame, s = this.anim.state;
         if (IMG.crowSheet) {
             const sh = IMG.crowSheet, sw = sh.naturalWidth || 128, shh = sh.naturalHeight || 96, cw = sw / 4, ch = shh / 4;
             const rowMap = { FLY: 2, DASH: 3, HIT: 2, KO: 3 }; const row = rowMap[s] !== undefined ? rowMap[s] : 2; const col = Math.min(f, 3);
-            c.drawImage(sh, col * cw, row * ch, cw, ch, -cw / 2, -ch / 2, cw, ch);
+            c.drawImage(sh, col * cw, row * ch, cw, ch, Math.floor(-cw / 2), Math.floor(-ch / 2), cw, ch);
         } else {
             const wingA = { FLY: [-0.5, -0.1, 0.3, 0.5], DASH: [0.5, 0.5, 0.4, 0.3], HIT: [-0.3, 0, 0.1, 0], KO: [0.6, 0.6, 0.6, 0.6] }; const wa = (wingA[s] || wingA['FLY'])[f];
             c.fillStyle = "#111"; c.strokeStyle = "#333"; c.lineWidth = 1.5;
@@ -272,7 +274,7 @@ class Crow {
             const bCol = hits >= 3 ? "#aaeeff" : hits === 2 ? "#44aaff" : "#ff88cc";
             c.globalAlpha = pulse + (hits >= 3 ? 0 : 0.06);
             c.strokeStyle = bCol; c.lineWidth = 2 + (3 - hits);
-            c.shadowColor = bCol; c.shadowBlur = 8 + (3 - hits) * 4;
+            if (!ns()) { c.shadowColor = bCol; c.shadowBlur = 8 + (3 - hits) * 4; }
             c.beginPath(); c.arc(0, 0, 22, 0, Math.PI * 2); c.stroke();
             /* 残数を小さな点で表示 */
             for (let hi = 0; hi < hits; hi++) {
@@ -289,14 +291,13 @@ class Crow {
             if (f.x < -30 || f.x > CFG.W + 30 || f.y < -30 || f.y > CFG.H + 30) f.active = false;
             if (!f.active) { this.feathers.splice(i, 1); continue; }
             if (f.isBeam || f.isPurpleSword) {
-                c.save(); c.translate(f.x, f.y); c.rotate(Math.atan2(f.vy, f.vx));
+                c.save(); c.translate(Math.floor(f.x), Math.floor(f.y)); c.rotate(Math.atan2(f.vy, f.vx));
                 if (f.isPurpleSword) {
                     /* ===== 紫の誘導剣: ホーミングスキル専用描画 ===== */
                     const len = 52;
                     const pulse = 0.75 + Math.sin(f.life * 0.28) * 0.25;
                     /* 剣身（先端に向けて細くなる形状） */
-                    c.shadowBlur = 20 * pulse;
-                    c.shadowColor = '#cc44ff';
+                    if (!ns()) { c.shadowBlur = 20 * pulse; c.shadowColor = '#cc44ff'; }
                     c.fillStyle = 'rgba(172, 68, 252, 0.93)';
                     c.beginPath();
                     c.moveTo(len, 0);           /* 剣先 */
@@ -307,11 +308,11 @@ class Crow {
                     c.closePath();
                     c.fill();
                     /* 鍔（クロスガード） */
-                    c.shadowBlur = 12;
+                    if (!ns()) c.shadowBlur = 12;
                     c.fillStyle = 'rgba(215, 155, 255, 0.97)';
                     c.fillRect(-len * 0.48, -10, 9, 20);
                     /* 刃の中央輝きライン */
-                    c.shadowBlur = 16;
+                    if (!ns()) c.shadowBlur = 16;
                     c.strokeStyle = 'rgba(235, 190, 255, 0.88)';
                     c.lineWidth = 1.8;
                     c.beginPath();
@@ -319,7 +320,7 @@ class Crow {
                     c.lineTo(-len * 0.35, 0);
                     c.stroke();
                     /* 剣先の輝き点 */
-                    c.shadowBlur = 24 * pulse;
+                    if (!ns()) c.shadowBlur = 24 * pulse;
                     c.fillStyle = 'rgba(245, 210, 255, 0.97)';
                     c.beginPath();
                     c.arc(len * 0.88, 0, 4, 0, Math.PI * 2);
@@ -343,32 +344,28 @@ class Crow {
                         [ len,       0]
                     ];
                     /* 外側グロー（太い・薄緑） */
-                    c.shadowColor = '#00ff88';
-                    c.shadowBlur = 30 * pulse;
+                    if (!ns()) { c.shadowColor = '#00ff88'; c.shadowBlur = 30 * pulse; }
                     c.strokeStyle = `rgba(0,255,120,0.35)`;
                     c.lineWidth = 8;
                     c.beginPath();
                     pts.forEach(([px,py], i) => i===0 ? c.moveTo(px,py) : c.lineTo(px,py));
                     c.stroke();
                     /* メインボルト（黄緑） */
-                    c.shadowBlur = 18 * pulse;
-                    c.shadowColor = '#88ffcc';
+                    if (!ns()) { c.shadowBlur = 18 * pulse; c.shadowColor = '#88ffcc'; }
                     c.strokeStyle = `rgba(100,255,170,0.92)`;
                     c.lineWidth = 2.8;
                     c.beginPath();
                     pts.forEach(([px,py], i) => i===0 ? c.moveTo(px,py) : c.lineTo(px,py));
                     c.stroke();
                     /* コア（白） */
-                    c.shadowBlur = 8;
-                    c.shadowColor = '#ffffff';
+                    if (!ns()) { c.shadowBlur = 8; c.shadowColor = '#ffffff'; }
                     c.strokeStyle = 'rgba(220,255,235,0.98)';
                     c.lineWidth = 1.2;
                     c.beginPath();
                     pts.forEach(([px,py], i) => i===0 ? c.moveTo(px,py) : c.lineTo(px,py));
                     c.stroke();
                     /* 分岐フォーク1（ランダム枝） */
-                    c.shadowBlur = 14 * pulse;
-                    c.shadowColor = '#00ff88';
+                    if (!ns()) { c.shadowBlur = 14 * pulse; c.shadowColor = '#00ff88'; }
                     c.strokeStyle = `rgba(80,255,150,${0.55 + pulse*0.2})`;
                     c.lineWidth = 1.5;
                     c.beginPath();
@@ -382,15 +379,13 @@ class Crow {
                     c.lineTo(len*0.62, jY * -19);
                     c.stroke();
                     /* 先端輝き（白球） */
-                    c.shadowBlur = 26 * pulse;
-                    c.shadowColor = '#ffffff';
+                    if (!ns()) { c.shadowBlur = 26 * pulse; c.shadowColor = '#ffffff'; }
                     c.fillStyle = 'rgba(230,255,245,0.99)';
                     c.beginPath();
                     c.arc(len, 0, 4, 0, Math.PI * 2);
                     c.fill();
                     /* 後端グロー球 */
-                    c.shadowBlur = 14;
-                    c.shadowColor = '#00ff88';
+                    if (!ns()) { c.shadowBlur = 14; c.shadowColor = '#00ff88'; }
                     c.fillStyle = 'rgba(0,255,130,0.75)';
                     c.beginPath();
                     c.arc(-len, 0, 2.8, 0, Math.PI * 2);
@@ -412,11 +407,10 @@ class Crow {
             } else if (f.isCloneShot) {
                 /* 分身弾: グレーの羽根型 */
                 c.save();
-                c.translate(f.x, f.y);
+                c.translate(Math.floor(f.x), Math.floor(f.y));
                 c.rotate(Math.atan2(f.vy, f.vx));
                 c.globalAlpha = 0.78;
-                c.shadowBlur = 7;
-                c.shadowColor = '#aaaaaa';
+                if (!ns()) { c.shadowBlur = 7; c.shadowColor = '#aaaaaa'; }
                 c.fillStyle = '#bdc3c7';
                 c.beginPath();
                 c.moveTo(13, 0); c.lineTo(-7, -4); c.lineTo(-7, 4); c.closePath();
@@ -426,7 +420,7 @@ class Crow {
             } else if (f.isGalaxy) {
                 // ギャラクシー砲: 手前に光る球＋一直線レーザー（青白・浄化の青いほむら）
                 c.save();
-                c.translate(f.x, f.y);
+                c.translate(Math.floor(f.x), Math.floor(f.y));
                 c.rotate(Math.atan2(f.vy, f.vx));
                 const beamLen = 90;
                 const orbR = 14;
@@ -448,7 +442,7 @@ class Crow {
                 c.restore();
             } else {
                 c.fillStyle = "#e0cda7";
-                c.save(); c.translate(f.x, f.y); c.rotate(Math.atan2(f.vy, f.vx)); c.scale(0.55, 0.55); c.globalAlpha = 0.9;
+                c.save(); c.translate(Math.floor(f.x), Math.floor(f.y)); c.rotate(Math.atan2(f.vy, f.vx)); c.scale(0.55, 0.55); c.globalAlpha = 0.9;
                 c.beginPath(); c.moveTo(12, 0); c.lineTo(-7, -4); c.lineTo(-7, 4); c.closePath(); c.fill(); c.restore();
             }
         }

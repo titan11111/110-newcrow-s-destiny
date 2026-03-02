@@ -25,10 +25,12 @@ class Relic {
         if (this.x < -50 || this.timer > 600) this.active = false;
     }
     draw(c) {
-        c.save(); c.translate(this.x, this.y); const p = 1 + Math.sin(this.timer * 0.1) * 0.12; c.scale(p * 0.383, p * 0.383);
+        c.save(); c.translate(Math.floor(this.x), Math.floor(this.y)); const p = 1 + Math.sin(this.timer * 0.1) * 0.12; c.scale(p * 0.383, p * 0.383);
         if (IMG.items && this.type.iconIndex !== undefined) {
             const sh = IMG.items, sw = sh.naturalWidth || 400, shh = sh.naturalHeight || 100, sliceW = sw / 4, sx = this.type.iconIndex * sliceW;
-            c.globalAlpha = 0.9 + Math.sin(this.timer * 0.08) * 0.1; c.drawImage(sh, sx, 0, sliceW, shh, -sliceW / 3, -shh / 3, sliceW * 2 / 3, shh * 2 / 3);
+            c.globalAlpha = 0.9 + Math.sin(this.timer * 0.08) * 0.1;
+            const dx = Math.floor(-sliceW / 3), dy = Math.floor(-shh / 3), dw = Math.floor(sliceW * 2 / 3), dh = Math.floor(shh * 2 / 3);
+            c.drawImage(sh, sx, 0, sliceW, shh, dx, dy, dw, dh);
         } else {
             c.globalAlpha = 0.25 + Math.sin(this.timer * 0.08) * 0.1; c.fillStyle = this.type.color; c.beginPath(); c.arc(0, 0, 18, 0, Math.PI * 2); c.fill();
             c.globalAlpha = 1; c.strokeStyle = this.type.color; c.lineWidth = 2.5;

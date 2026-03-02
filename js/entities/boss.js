@@ -11,6 +11,8 @@ const IMG = global.CrowDestiny.IMG;
 const rr = global.CrowDestiny.rr;
 const Enemy = global.CrowDestiny.Enemy;
 const clamp = global.CrowDestiny.clamp;
+/** shadowBlur 禁止フラグ参照（iOS / 低FPS 時 true） */
+const ns = () => global.CrowDestiny.noShadow;
 /** 全ボス共通: 表示・当たり判定を60%に縮小（その代わり画面内を動き回る） */
 const BOSS_SIZE_SCALE = 0.6;
 
@@ -1938,8 +1940,7 @@ class Boss {
         if (this.idx === 1 && this.boss2Phase === 'enraged' && IMG.boss2) {
             c.save();
             c.globalAlpha = 0.25 + Math.sin(this.timer * 0.2) * 0.15;
-            c.shadowColor = '#00ff44';
-            c.shadowBlur = 20 + Math.sin(this.timer * 0.15) * 8;
+            if (!ns()) { c.shadowColor = '#00ff44'; c.shadowBlur = 20 + Math.sin(this.timer * 0.15) * 8; }
             c.fillStyle = '#00ff4433';
             c.beginPath(); c.arc(0, 0, 70, 0, Math.PI * 2); c.fill();
             c.restore();
@@ -1950,8 +1951,7 @@ class Boss {
             const len = CFG.W * 1.2;
             c.save();
             c.strokeStyle = '#88ffcc';
-            c.shadowColor = '#88ffcc';
-            c.shadowBlur = 12;
+            if (!ns()) { c.shadowColor = '#88ffcc'; c.shadowBlur = 12; }
             c.globalAlpha = 0.4 + warn * 0.5;
             c.lineWidth = 2 + warn * 4;
             c.setLineDash([6, 8]);
@@ -1980,7 +1980,7 @@ class Boss {
                 if (guardImg.complete && guardImg.naturalWidth) {
                     c.save();
                     c.globalAlpha = 0.9;
-                    c.drawImage(guardImg, core.x - gSize / 2, core.y - gSize / 2, gSize, gSize);
+                    c.drawImage(guardImg, Math.floor(core.x - gSize / 2), Math.floor(core.y - gSize / 2), gSize, gSize);
                     c.restore();
                 } else {
                     c.save(); c.globalAlpha = 0.85; c.fillStyle = '#5A2D8A'; c.strokeStyle = '#C39BFF'; c.lineWidth = 2;
@@ -2032,14 +2032,15 @@ class Boss {
             this.voidAfterimages.forEach(a => {
                 c.save();
                 c.globalAlpha = (a.t / LIFE) * 0.72;
-                c.translate(a.x, a.y); c.scale(-1, 1);
-                c.drawImage(sheet, (a.frame || 0) * fw, 0, fw, ih, -drawW / 2, -drawH / 2, drawW, drawH);
+                c.translate(Math.floor(a.x), Math.floor(a.y)); c.scale(-1, 1);
+                const _dx = Math.floor(-drawW / 2), _dy = Math.floor(-drawH / 2);
+                c.drawImage(sheet, (a.frame || 0) * fw, 0, fw, ih, _dx, _dy, drawW, drawH);
                 c.restore();
             });
         }
         const jitterX = 0;
         const jitterY = 0;
-        c.save(); c.translate(this.x + jitterX, this.y + jitterY);
+        c.save(); c.translate(Math.floor(this.x + jitterX), Math.floor(this.y + jitterY));
         if (this.idx === 2 && (this.mimicChargePhase === 'spin' || this.mimicChargePhase === 'charge')) c.rotate(this.mimicSpinAngle || 0);
         if (this.idx === 6) c.scale(-1, 1);
         if (this.idx === 0) c.scale(-1, 1); /* BOSS1: カラス方向（左）を向くよう左右反転 */
@@ -2080,17 +2081,20 @@ class Boss {
                 if (!this._pixBuf || this._pixBuf.width !== smallW || this._pixBuf.height !== smallH) { this._pixBuf = document.createElement('canvas'); this._pixBuf.width = smallW; this._pixBuf.height = smallH; }
                 const buf = this._pixBuf.getContext('2d'); buf.drawImage(bossImgSheet, sx, 0, fw, ih, 0, 0, smallW, smallH);
                 if (!useDeathPixel) { buf.globalCompositeOperation = 'multiply'; buf.globalAlpha = 0.35; buf.fillStyle = this.color; buf.fillRect(0, 0, smallW, smallH); buf.globalAlpha = 1; buf.globalCompositeOperation = 'source-over'; }
-                c.imageSmoothingEnabled = false; c.drawImage(this._pixBuf, 0, 0, smallW, smallH, -drawW / 2, -drawH / 2, drawW, drawH); c.imageSmoothingEnabled = true;
+                const _dwx = Math.floor(-drawW / 2), _dwy = Math.floor(-drawH / 2);
+                c.imageSmoothingEnabled = false; c.drawImage(this._pixBuf, 0, 0, smallW, smallH, _dwx, _dwy, drawW, drawH); c.imageSmoothingEnabled = true;
             } else {
-                c.drawImage(bossImgSheet, sx, 0, fw, ih, -drawW / 2, -drawH / 2, drawW, drawH);
+                const _dwx = Math.floor(-drawW / 2), _dwy = Math.floor(-drawH / 2);
+                c.drawImage(bossImgSheet, sx, 0, fw, ih, _dwx, _dwy, drawW, drawH);
             }
             if (!useIntroPixel && !useDeathPixel) {
+                const _dwx = Math.floor(-drawW / 2), _dwy = Math.floor(-drawH / 2);
                 if (this.hitFlash > 0) {
                     c.globalCompositeOperation = 'source-over';
-                    c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1;
+                    c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(_dwx, _dwy, drawW, drawH); c.globalAlpha = 1;
                 } else {
                     c.globalCompositeOperation = 'multiply';
-                    c.globalAlpha = 0.35; c.fillStyle = this.color; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1;
+                    c.globalAlpha = 0.35; c.fillStyle = this.color; c.fillRect(_dwx, _dwy, drawW, drawH); c.globalAlpha = 1;
                     c.globalCompositeOperation = 'source-over';
                 }
             }
@@ -2109,13 +2113,14 @@ class Boss {
             let baseScale = (BOSS_DISPLAY_MAX / maxDim) * (1 + Math.sin(t * 0.04) * 0.02) * deathScale * BOSS_SIZE_SCALE;
             const drawW = BOSS2_CELL_W * baseScale; const drawH = BOSS2_CELL_H * baseScale;
             this._drawW = drawW; this._drawH = drawH;
-            c.drawImage(img, sx, sy, BOSS2_CELL_W, BOSS2_CELL_H, -drawW / 2, -drawH / 2, drawW, drawH);
+            const _b2x = Math.floor(-drawW / 2), _b2y = Math.floor(-drawH / 2);
+            c.drawImage(img, sx, sy, BOSS2_CELL_W, BOSS2_CELL_H, _b2x, _b2y, drawW, drawH);
             if (this.hitFlash > 0) {
                 c.globalCompositeOperation = 'source-over';
-                c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1;
+                c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(_b2x, _b2y, drawW, drawH); c.globalAlpha = 1;
             } else {
                 c.globalCompositeOperation = 'multiply';
-                c.globalAlpha = 0.3; c.fillStyle = this.color; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1;
+                c.globalAlpha = 0.3; c.fillStyle = this.color; c.fillRect(_b2x, _b2y, drawW, drawH); c.globalAlpha = 1;
                 c.globalCompositeOperation = 'source-over';
             }
         } else if (this.idx === 0 && IMG.boss1) {
@@ -2133,22 +2138,23 @@ class Boss {
             const drawW = BOSS1_DRAW_W * deathScale, drawH = BOSS1_DRAW_H * deathScale;
             this._drawW = drawW; this._drawH = drawH;
             const dx = 0, dy = 0;
+            const _b1x = Math.floor(-drawW / 2 + dx), _b1y = Math.floor(-drawH / 2 + dy);
             if (useIntroPixel || useDeathPixel) {
                 const smallW = Math.max(4, Math.floor(drawW / pixelScale)); const smallH = Math.max(4, Math.floor(drawH / pixelScale));
                 if (!this._pixBuf || this._pixBuf.width !== smallW || this._pixBuf.height !== smallH) { this._pixBuf = document.createElement('canvas'); this._pixBuf.width = smallW; this._pixBuf.height = smallH; }
                 const buf = this._pixBuf.getContext('2d'); buf.drawImage(IMG.boss1, sx, sy, BOSS1_CELL_W, BOSS1_CELL_H, 0, 0, smallW, smallH);
                 if (!useDeathPixel) { buf.globalCompositeOperation = 'multiply'; buf.globalAlpha = 0.35; buf.fillStyle = this.color; buf.fillRect(0, 0, smallW, smallH); buf.globalAlpha = 1; buf.globalCompositeOperation = 'source-over'; }
-                c.imageSmoothingEnabled = false; c.drawImage(this._pixBuf, 0, 0, smallW, smallH, -drawW / 2 + dx, -drawH / 2 + dy, drawW, drawH); c.imageSmoothingEnabled = true;
+                c.imageSmoothingEnabled = false; c.drawImage(this._pixBuf, 0, 0, smallW, smallH, _b1x, _b1y, drawW, drawH); c.imageSmoothingEnabled = true;
             } else {
-                c.drawImage(IMG.boss1, sx, sy, BOSS1_CELL_W, BOSS1_CELL_H, -drawW / 2 + dx, -drawH / 2 + dy, drawW, drawH);
+                c.drawImage(IMG.boss1, sx, sy, BOSS1_CELL_W, BOSS1_CELL_H, _b1x, _b1y, drawW, drawH);
             }
             if (!useIntroPixel && !useDeathPixel) {
                 if (this.hitFlash > 0) {
                     c.globalCompositeOperation = 'source-over';
-                    c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(-drawW / 2 + dx, -drawH / 2 + dy, drawW, drawH); c.globalAlpha = 1;
+                    c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(_b1x, _b1y, drawW, drawH); c.globalAlpha = 1;
                 } else {
                     c.globalCompositeOperation = 'multiply';
-                    c.globalAlpha = 0.35; c.fillStyle = this.color; c.fillRect(-drawW / 2 + dx, -drawH / 2 + dy, drawW, drawH); c.globalAlpha = 1;
+                    c.globalAlpha = 0.35; c.fillStyle = this.color; c.fillRect(_b1x, _b1y, drawW, drawH); c.globalAlpha = 1;
                     c.globalCompositeOperation = 'source-over';
                 }
             }
@@ -2162,36 +2168,38 @@ class Boss {
             const drawW = iw * baseScale, drawH = ih * baseScale;
             this._drawW = drawW; this._drawH = drawH;
             const glitchIntensity = 1 - this.hp / this.maxHp;
+            const _b3x = Math.floor(-drawW / 2), _b3y = Math.floor(-drawH / 2);
             if (useIntroPixel || useDeathPixel) {
                 const smallW = Math.max(4, Math.floor(drawW / pixelScale)); const smallH = Math.max(4, Math.floor(drawH / pixelScale));
                 if (!this._pixBuf || this._pixBuf.width !== smallW || this._pixBuf.height !== smallH) { this._pixBuf = document.createElement('canvas'); this._pixBuf.width = smallW; this._pixBuf.height = smallH; }
                 const buf = this._pixBuf.getContext('2d'); buf.drawImage(img, 0, 0, iw, ih, 0, 0, smallW, smallH);
                 if (!useDeathPixel) { buf.globalCompositeOperation = 'multiply'; buf.globalAlpha = 0.35; buf.fillStyle = this.color; buf.fillRect(0, 0, smallW, smallH); buf.globalAlpha = 1; buf.globalCompositeOperation = 'source-over'; }
-                c.imageSmoothingEnabled = false; c.drawImage(this._pixBuf, 0, 0, smallW, smallH, -drawW / 2, -drawH / 2, drawW, drawH); c.imageSmoothingEnabled = true;
+                c.imageSmoothingEnabled = false; c.drawImage(this._pixBuf, 0, 0, smallW, smallH, _b3x, _b3y, drawW, drawH); c.imageSmoothingEnabled = true;
             } else {
                 if (glitchIntensity > 0.25) {
                     c.save();
                     c.globalAlpha = 0.2 * glitchIntensity;
-                    c.drawImage(img, 0, 0, iw, ih, -drawW / 2 - 5, -drawH / 2, drawW, drawH);
-                    c.drawImage(img, 0, 0, iw, ih, -drawW / 2 + 5, -drawH / 2, drawW, drawH);
+                    c.drawImage(img, 0, 0, iw, ih, _b3x - 5, _b3y, drawW, drawH);
+                    c.drawImage(img, 0, 0, iw, ih, _b3x + 5, _b3y, drawW, drawH);
                     c.restore();
                 }
-                c.drawImage(img, 0, 0, iw, ih, -drawW / 2, -drawH / 2, drawW, drawH);
+                c.drawImage(img, 0, 0, iw, ih, _b3x, _b3y, drawW, drawH);
             }
             if (!useIntroPixel && !useDeathPixel) {
                 if (this.hitFlash > 0) {
                     c.globalCompositeOperation = 'source-over';
-                    c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1;
+                    c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(_b3x, _b3y, drawW, drawH); c.globalAlpha = 1;
                 } else {
                     c.globalCompositeOperation = 'multiply';
-                    c.globalAlpha = 0.35; c.fillStyle = this.color; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1;
+                    c.globalAlpha = 0.35; c.fillStyle = this.color; c.fillRect(_b3x, _b3y, drawW, drawH); c.globalAlpha = 1;
                     c.globalCompositeOperation = 'source-over';
                 }
             }
         } else if (this.idx === 3 && IMG.boss4) {
             /* BOSS4: 鉄の翼 / InfernalBatDemon 3×3グリッド 9フレーム。羽ばたきループ・翼残像（オレンジ〜赤）・影・胸部コア発光 */
             const img = IMG.boss4;
-            if (this.ironWingTrail && this.ironWingTrail.length > 0) {
+            if (this.ironWingTrail && this.ironWingTrail.length > 0 && !ns()) {
+                /* radialGradient は iOS で重いため noShadow=true（モバイル/低FPS）時はスキップ */
                 c.save();
                 c.setTransform(1, 0, 0, 1, 0, 0);
                 this.ironWingTrail.forEach((tr, i) => {
@@ -2233,20 +2241,26 @@ class Boss {
             c.fill();
             c.restore();
             c.save();
-            c.translate(0, floatY);
+            c.translate(0, Math.floor(floatY));
             if (this.ironWingFlipX) c.scale(-1, 1);
-            c.drawImage(img, sx, sy, cellW, cellH, -drawW / 2, -drawH / 2, drawW, drawH);
-            if (this.hitFlash > 0) { c.globalCompositeOperation = 'source-over'; c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1; }
-            else if (this.ironWingRage && t % 20 < 10) { c.globalCompositeOperation = 'multiply'; c.globalAlpha = 0.5; c.fillStyle = '#ff3c3c'; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; }
-            else { c.globalCompositeOperation = 'multiply'; c.globalAlpha = 0.35; c.fillStyle = this.color; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; }
+            const _b4x = Math.floor(-drawW / 2), _b4y = Math.floor(-drawH / 2);
+            c.drawImage(img, sx, sy, cellW, cellH, _b4x, _b4y, drawW, drawH);
+            if (this.hitFlash > 0) { c.globalCompositeOperation = 'source-over'; c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(_b4x, _b4y, drawW, drawH); c.globalAlpha = 1; }
+            else if (this.ironWingRage && t % 20 < 10) { c.globalCompositeOperation = 'multiply'; c.globalAlpha = 0.5; c.fillStyle = '#ff3c3c'; c.fillRect(_b4x, _b4y, drawW, drawH); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; }
+            else { c.globalCompositeOperation = 'multiply'; c.globalAlpha = 0.35; c.fillStyle = this.color; c.fillRect(_b4x, _b4y, drawW, drawH); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; }
             c.globalCompositeOperation = 'lighter';
             const leftEyeX = -drawW / 2 + drawW * 0.35; const rightEyeX = -drawW / 2 + drawW * 0.65; const eyeY = -drawH / 2 + drawH * 0.28;
             const eyeGlow = 0.6 + Math.sin(t * 0.12) * 0.25;
             [leftEyeX, rightEyeX].forEach(ex => {
-                const grad = c.createRadialGradient(ex, eyeY, 0, ex, eyeY, 14);
-                grad.addColorStop(0, 'rgba(255,50,50,' + eyeGlow + ')');
-                grad.addColorStop(1, 'transparent');
-                c.fillStyle = grad;
+                if (!ns()) {
+                    /* radialGradient は iOS で重いため noShadow 時はシンプルな塗りで代替 */
+                    const grad = c.createRadialGradient(ex, eyeY, 0, ex, eyeY, 14);
+                    grad.addColorStop(0, 'rgba(255,50,50,' + eyeGlow + ')');
+                    grad.addColorStop(1, 'transparent');
+                    c.fillStyle = grad;
+                } else {
+                    c.fillStyle = 'rgba(255,50,50,' + (eyeGlow * 0.6) + ')';
+                }
                 c.beginPath();
                 c.arc(ex, eyeY, 14, 0, Math.PI * 2);
                 c.fill();
@@ -2266,11 +2280,12 @@ class Boss {
             let baseScale = (BOSS_DISPLAY_MAX / Math.max(cellW, cellH, 1)) * (1 + Math.sin(t * 0.04) * 0.02) * deathScale * BOSS_SIZE_SCALE * 1.1;
             const drawW = cellW * baseScale; const drawH = cellH * baseScale;
             this._drawW = drawW; this._drawH = drawH;
+            const _b5x = Math.floor(-drawW / 2), _b5y = Math.floor(-drawH / 2);
             if (this.scarabotFlipX) c.scale(-1, 1);
-            c.drawImage(img, sx, sy, cellW, cellH, -drawW / 2, -drawH / 2, drawW, drawH);
+            c.drawImage(img, sx, sy, cellW, cellH, _b5x, _b5y, drawW, drawH);
             if (this.scarabotFlipX) c.scale(-1, 1);
-            if (this.hitFlash > 0) { c.globalCompositeOperation = 'source-over'; c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1; }
-            else { c.globalCompositeOperation = 'multiply'; c.globalAlpha = 0.3; c.fillStyle = this.color; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; }
+            if (this.hitFlash > 0) { c.globalCompositeOperation = 'source-over'; c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(_b5x, _b5y, drawW, drawH); c.globalAlpha = 1; }
+            else { c.globalCompositeOperation = 'multiply'; c.globalAlpha = 0.3; c.fillStyle = this.color; c.fillRect(_b5x, _b5y, drawW, drawH); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; }
         } else if (this.idx === 6 && this.form === 0 && IMG.boss7) {
             /* BOSS7（ラスボス第1形態）: 2列×3行 6フレーム。idle [0,1] / charge [0,1,2] / burst 3 / discharge [4,5] / full [0..5] */
             const img = IMG.boss7;
@@ -2295,22 +2310,23 @@ class Boss {
             const drawH = cellH * baseScale;
             this._drawW = drawW;
             this._drawH = drawH;
+            const _b7x = Math.floor(-drawW / 2), _b7y = Math.floor(-drawH / 2);
             if (useIntroPixel || useDeathPixel) {
                 const smallW = Math.max(4, Math.floor(drawW / pixelScale)); const smallH = Math.max(4, Math.floor(drawH / pixelScale));
                 if (!this._pixBuf || this._pixBuf.width !== smallW || this._pixBuf.height !== smallH) { this._pixBuf = document.createElement('canvas'); this._pixBuf.width = smallW; this._pixBuf.height = smallH; }
                 const buf = this._pixBuf.getContext('2d'); buf.drawImage(img, sx, sy, cellW, cellH, 0, 0, smallW, smallH);
                 if (!useDeathPixel) { buf.globalCompositeOperation = 'multiply'; buf.globalAlpha = 0.35; buf.fillStyle = this.color; buf.fillRect(0, 0, smallW, smallH); buf.globalAlpha = 1; buf.globalCompositeOperation = 'source-over'; }
-                c.imageSmoothingEnabled = false; c.drawImage(this._pixBuf, 0, 0, smallW, smallH, -drawW / 2, -drawH / 2, drawW, drawH); c.imageSmoothingEnabled = true;
+                c.imageSmoothingEnabled = false; c.drawImage(this._pixBuf, 0, 0, smallW, smallH, _b7x, _b7y, drawW, drawH); c.imageSmoothingEnabled = true;
             } else {
-                c.drawImage(img, sx, sy, cellW, cellH, -drawW / 2, -drawH / 2, drawW, drawH);
+                c.drawImage(img, sx, sy, cellW, cellH, _b7x, _b7y, drawW, drawH);
             }
             if (!useIntroPixel && !useDeathPixel) {
                 if (this.hitFlash > 0) {
                     c.globalCompositeOperation = 'source-over';
-                    c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1;
+                    c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(_b7x, _b7y, drawW, drawH); c.globalAlpha = 1;
                 } else {
                     c.globalCompositeOperation = 'multiply';
-                    c.globalAlpha = 0.35; c.fillStyle = this.color; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1;
+                    c.globalAlpha = 0.35; c.fillStyle = this.color; c.fillRect(_b7x, _b7y, drawW, drawH); c.globalAlpha = 1;
                     c.globalCompositeOperation = 'source-over';
                 }
             }
@@ -2330,11 +2346,12 @@ class Boss {
             let baseScale = (BOSS_DISPLAY_MAX / Math.max(cellW, cellH, 1)) * (1 + Math.sin(t * 0.04) * 0.02) * deathScale * BOSS_SIZE_SCALE * 1.56; /* 6面ボス 1.3×1.2 */
             const drawW = cellW * baseScale; const drawH = cellH * baseScale;
             this._drawW = drawW; this._drawH = drawH;
+            const _b6x = Math.floor(-drawW / 2), _b6y = Math.floor(-drawH / 2);
             c.scale(-1, 1);
-            c.drawImage(img, sx, sy, cellW, cellH, -drawW / 2, -drawH / 2, drawW, drawH);
+            c.drawImage(img, sx, sy, cellW, cellH, _b6x, _b6y, drawW, drawH);
             c.scale(-1, 1);
-            if (this.hitFlash > 0) { c.globalCompositeOperation = 'source-over'; c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1; }
-            else { c.globalCompositeOperation = 'multiply'; c.globalAlpha = 0.35; c.fillStyle = this.color; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; }
+            if (this.hitFlash > 0) { c.globalCompositeOperation = 'source-over'; c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(_b6x, _b6y, drawW, drawH); c.globalAlpha = 1; }
+            else { c.globalCompositeOperation = 'multiply'; c.globalAlpha = 0.35; c.fillStyle = this.color; c.fillRect(_b6x, _b6y, drawW, drawH); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; }
         } else if (this.idx === 6 && this.form === 1 && IMG.lastboss2) {
             /* ラスボス第2形態: lastboss2.png を 3列×2行（6フレーム）スプライトとして再生 */
             const img = IMG.lastboss2;
@@ -2354,22 +2371,23 @@ class Boss {
             baseScale *= 1.5;
             const drawW = cellW * baseScale, drawH = cellH * baseScale;
             this._drawW = drawW; this._drawH = drawH;
+            const _lb2x = Math.floor(-drawW / 2), _lb2y = Math.floor(-drawH / 2);
             if (useIntroPixel || useDeathPixel) {
                 const smallW = Math.max(4, Math.floor(drawW / pixelScale)); const smallH = Math.max(4, Math.floor(drawH / pixelScale));
                 if (!this._pixBuf || this._pixBuf.width !== smallW || this._pixBuf.height !== smallH) { this._pixBuf = document.createElement('canvas'); this._pixBuf.width = smallW; this._pixBuf.height = smallH; }
                 const buf = this._pixBuf.getContext('2d'); buf.drawImage(img, sx, sy, cellW, cellH, 0, 0, smallW, smallH);
                 if (!useDeathPixel) { buf.globalCompositeOperation = 'multiply'; buf.globalAlpha = 0.35; buf.fillStyle = this.color; buf.fillRect(0, 0, smallW, smallH); buf.globalAlpha = 1; buf.globalCompositeOperation = 'source-over'; }
-                c.imageSmoothingEnabled = false; c.drawImage(this._pixBuf, 0, 0, smallW, smallH, -drawW / 2, -drawH / 2, drawW, drawH); c.imageSmoothingEnabled = true;
+                c.imageSmoothingEnabled = false; c.drawImage(this._pixBuf, 0, 0, smallW, smallH, _lb2x, _lb2y, drawW, drawH); c.imageSmoothingEnabled = true;
             } else {
-                c.drawImage(img, sx, sy, cellW, cellH, -drawW / 2, -drawH / 2, drawW, drawH);
+                c.drawImage(img, sx, sy, cellW, cellH, _lb2x, _lb2y, drawW, drawH);
             }
             if (!useIntroPixel && !useDeathPixel) {
                 if (this.hitFlash > 0) {
                     c.globalCompositeOperation = 'source-over';
-                    c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1;
+                    c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(_lb2x, _lb2y, drawW, drawH); c.globalAlpha = 1;
                 } else {
                     c.globalCompositeOperation = 'multiply';
-                    c.globalAlpha = 0.35; c.fillStyle = this.color; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1;
+                    c.globalAlpha = 0.35; c.fillStyle = this.color; c.fillRect(_lb2x, _lb2y, drawW, drawH); c.globalAlpha = 1;
                     c.globalCompositeOperation = 'source-over';
                 }
             }
@@ -2382,22 +2400,23 @@ class Boss {
             if (this.idx === 6) baseScale *= 1.5;
             const drawW = iw * baseScale, drawH = ih * baseScale;
             this._drawW = drawW; this._drawH = drawH;
+            const _bix = Math.floor(-drawW / 2), _biy = Math.floor(-drawH / 2);
             if (useIntroPixel || useDeathPixel) {
                 const smallW = Math.max(4, Math.floor(drawW / pixelScale)); const smallH = Math.max(4, Math.floor(drawH / pixelScale));
                 if (!this._pixBuf || this._pixBuf.width !== smallW || this._pixBuf.height !== smallH) { this._pixBuf = document.createElement('canvas'); this._pixBuf.width = smallW; this._pixBuf.height = smallH; }
                 const buf = this._pixBuf.getContext('2d'); buf.drawImage(bossImg, 0, 0, iw, ih, 0, 0, smallW, smallH);
                 if (!useDeathPixel) { buf.globalCompositeOperation = 'multiply'; buf.globalAlpha = 0.35; buf.fillStyle = this.color; buf.fillRect(0, 0, smallW, smallH); buf.globalAlpha = 1; buf.globalCompositeOperation = 'source-over'; }
-                c.imageSmoothingEnabled = false; c.drawImage(this._pixBuf, 0, 0, smallW, smallH, -drawW / 2, -drawH / 2, drawW, drawH); c.imageSmoothingEnabled = true;
+                c.imageSmoothingEnabled = false; c.drawImage(this._pixBuf, 0, 0, smallW, smallH, _bix, _biy, drawW, drawH); c.imageSmoothingEnabled = true;
             } else {
-                c.drawImage(bossImg, 0, 0, iw, ih, -drawW / 2, -drawH / 2, drawW, drawH);
+                c.drawImage(bossImg, 0, 0, iw, ih, _bix, _biy, drawW, drawH);
             }
             if (!useIntroPixel && !useDeathPixel) {
                 if (this.hitFlash > 0) {
                     c.globalCompositeOperation = 'source-over';
-                    c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1;
+                    c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(_bix, _biy, drawW, drawH); c.globalAlpha = 1;
                 } else {
                     c.globalCompositeOperation = 'multiply';
-                    c.globalAlpha = 0.35; c.fillStyle = this.color; c.fillRect(-drawW / 2, -drawH / 2, drawW, drawH); c.globalAlpha = 1;
+                    c.globalAlpha = 0.35; c.fillStyle = this.color; c.fillRect(_bix, _biy, drawW, drawH); c.globalAlpha = 1;
                     c.globalCompositeOperation = 'source-over';
                 }
             }
@@ -2417,7 +2436,7 @@ class Boss {
             const bw = 280, bx = CFG.W / 2 - bw / 2;
             /* ボス名 */
             c.fillStyle = this.color; c.font = "bold 13px serif"; c.textAlign = "center";
-            c.shadowColor = this.color; c.shadowBlur = 8;
+            if (!ns()) { c.shadowColor = this.color; c.shadowBlur = 8; }
             c.fillText(this.name, CFG.W / 2, 12);
             c.shadowBlur = 0;
             /* HP バー背景 */

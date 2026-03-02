@@ -27,7 +27,7 @@ class Obstacle {
         c.save(); c.globalAlpha = 0.35; c.strokeStyle = this.glowColor; c.lineWidth = 1.5; drawFn(c, null, true); c.restore();
     }
     draw(c) {
-        c.save(); c.translate(this.x, this.y); const t = this.timer;
+        c.save(); c.translate(Math.floor(this.x), Math.floor(this.y)); const t = this.timer;
         if (this.type === "PILLAR") {
             this._drawGlow(c, (ctx, col, strokeOnly) => {
                 if (strokeOnly) { ctx.strokeRect(0, 0, this.w, this.h); return; }
