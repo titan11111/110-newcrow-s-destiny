@@ -19,6 +19,12 @@ class SoundManager {
         this.bgmVolume = 0.66;  /* 0.6 × 1.1（ゲーム全体の音量を1.1倍） */
         this._bgmEl = null;
         this._currentBGM = null;
+        /** キャッシュ済みノイズバッファ（ダッシュ・ステージ移行）。毎回動的生成→GCスパイクを防ぐ */
+        this._dashBuf = null;
+        this._transitionBuf = null;
+        /** hit/bossShot SE の同フレーム同時再生上限（GCスパイク抑制） */
+        this._hitCount = 0;
+        this._bossShotCount = 0;
     }
 
     /**
@@ -39,8 +45,35 @@ class SoundManager {
             src.connect(this.ctx.destination);
             src.start(0);
             this.initialized = true;
+            /* ノイズバッファを事前生成（毎回の動的確保＋GCスパイクを防ぐ） */
+            this._buildNoiseBuffers();
         } catch (e) {
             console.warn('AudioContext init failed:', e);
+        }
+    }
+
+    /** ダッシュ・ステージ移行用ノイズバッファを init 時に1回だけ生成してキャッシュ */
+    _buildNoiseBuffers() {
+        if (!this.ctx) return;
+        try {
+            /* dashバッファ: 80ms ホワイトノイズ（ダッシュSE用） */
+            const dashLen = Math.min(Math.floor(this.ctx.sampleRate * 0.08), 4096);
+            this._dashBuf = this.ctx.createBuffer(1, dashLen, this.ctx.sampleRate);
+            const dch = this._dashBuf.getChannelData(0);
+            for (let i = 0; i < dashLen; i++) {
+                const sweep = 1 - i / dashLen;
+                dch[i] = (Math.random() * 2 - 1) * Math.max(0, sweep) * 0.35;
+            }
+            /* transitionバッファ: 250ms ホワイトノイズ（ステージ移行SE用） */
+            const transLen = Math.floor(this.ctx.sampleRate * 0.25);
+            this._transitionBuf = this.ctx.createBuffer(1, transLen, this.ctx.sampleRate);
+            const tch = this._transitionBuf.getChannelData(0);
+            for (let i = 0; i < transLen; i++) {
+                const sweep = 1 - i / transLen;
+                tch[i] = (Math.random() * 2 - 1) * Math.max(0, sweep) * 0.25;
+            }
+        } catch (e) {
+            console.warn('Noise buffer build failed:', e);
         }
     }
 
@@ -89,11 +122,24 @@ class SoundManager {
         if (!this.seEnabled) return;
         if (!this.ctx) this.init();
         if (!this.ctx) return;
+        /* iOS: AudioContext が suspended の場合は非同期でresumeを試みてSEはスキップ。
+           .then()コールバック滞留を防ぐ。次フレームから正常再生に戻る。 */
+        if (this.ctx.state === 'suspended') { this.ensureResumed(); return; }
 
         if (type === 'shoot') {
             this._shootCount = this._shootCount || 0;
             if (this._shootCount >= 4) return;
             this._shootCount++;
+        } else if (type === 'hit') {
+            /* hit SE: 1フレーム最大3回（ボス戦で弾が爆発するたびに無制限生成→GCスパイクを防ぐ） */
+            this._hitCount = this._hitCount || 0;
+            if (this._hitCount >= 3) return;
+            this._hitCount++;
+        } else if (type === 'bossShot') {
+            /* bossShot SE: 1フレーム最大2回 */
+            this._bossShotCount = this._bossShotCount || 0;
+            if (this._bossShotCount >= 2) return;
+            this._bossShotCount++;
         }
 
         this.ensureResumed().then(() => {
@@ -122,6 +168,7 @@ class SoundManager {
                 gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
                 osc.start(now);
                 osc.stop(now + 0.12);
+                osc.onended = () => { this._hitCount = Math.max(0, (this._hitCount || 1) - 1); };
             } else if (type === 'item') {
                 osc.type = 'sine';
                 osc.frequency.setValueAtTime(440, now);
@@ -131,17 +178,17 @@ class SoundManager {
                 osc.start(now);
                 osc.stop(now + 0.12);
             } else if (type === 'dash') {
-                /* シュッ！という鋭い高速移動感（高域スイープ＋短いノイズ） */
-                const bufLen = Math.min(this.ctx.sampleRate * 0.08, 4096);
-                const buf = this.ctx.createBuffer(1, bufLen, this.ctx.sampleRate);
-                const ch = buf.getChannelData(0);
-                for (let i = 0; i < bufLen; i++) {
-                    const t = i / this.ctx.sampleRate;
-                    const sweep = 1 - t / 0.08;
-                    ch[i] = (Math.random() * 2 - 1) * Math.max(0, sweep) * 0.35;
-                }
+                /* シュッ！という鋭い高速移動感（高域スイープ＋短いノイズ）
+                   バッファはinit時にキャッシュ済み(_dashBuf)。毎回の動的確保を排除。 */
                 const src = this.ctx.createBufferSource();
-                src.buffer = buf;
+                src.buffer = this._dashBuf || (() => {
+                    /* fallback: 未キャッシュの場合のみ生成 */
+                    const bufLen = Math.min(Math.floor(this.ctx.sampleRate * 0.08), 4096);
+                    const b = this.ctx.createBuffer(1, bufLen, this.ctx.sampleRate);
+                    const ch = b.getChannelData(0);
+                    for (let i = 0; i < bufLen; i++) { const s = 1 - i / bufLen; ch[i] = (Math.random() * 2 - 1) * Math.max(0, s) * 0.35; }
+                    return b;
+                })();
                 const g = this.ctx.createGain();
                 g.gain.setValueAtTime(0.28 * this.seVolume, now);
                 g.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
@@ -194,17 +241,16 @@ class SoundManager {
                 osc.start(now);
                 osc.stop(now + 0.14);
             } else if (type === 'stageTransition') {
-                /* シュッという高速移動感のノイズ（ホワイトノイズ＋高域スイープ） */
-                const bufLen = this.ctx.sampleRate * 0.25;
-                const buf = this.ctx.createBuffer(1, bufLen, this.ctx.sampleRate);
-                const ch = buf.getChannelData(0);
-                for (let i = 0; i < bufLen; i++) {
-                    const t = i / this.ctx.sampleRate;
-                    const sweep = 1 - t / 0.25;
-                    ch[i] = (Math.random() * 2 - 1) * Math.max(0, sweep) * 0.25;
-                }
+                /* シュッという高速移動感のノイズ（ホワイトノイズ＋高域スイープ）
+                   バッファはinit時にキャッシュ済み(_transitionBuf)。11,025サンプルの動的生成を排除。 */
                 const src = this.ctx.createBufferSource();
-                src.buffer = buf;
+                src.buffer = this._transitionBuf || (() => {
+                    const bufLen = Math.floor(this.ctx.sampleRate * 0.25);
+                    const b = this.ctx.createBuffer(1, bufLen, this.ctx.sampleRate);
+                    const ch = b.getChannelData(0);
+                    for (let i = 0; i < bufLen; i++) { const s = 1 - i / bufLen; ch[i] = (Math.random() * 2 - 1) * Math.max(0, s) * 0.25; }
+                    return b;
+                })();
                 const g = this.ctx.createGain();
                 g.gain.setValueAtTime(0.2 * this.seVolume, now);
                 g.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
@@ -220,6 +266,7 @@ class SoundManager {
                 gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
                 osc.start(now);
                 osc.stop(now + 0.12);
+                osc.onended = () => { this._bossShotCount = Math.max(0, (this._bossShotCount || 1) - 1); };
             } else if (type === 'bossBig') {
                 /* ボス大技 — 充電〜解放の重い音 */
                 osc.type = 'square';
@@ -316,32 +363,40 @@ class SoundManager {
      * BGM を再生する。
      * iOS: 毎回 new Audio() するとユーザージェスチャー外で再生がブロックされるため、
      * 1本の Audio 要素を再利用し src のみ差し替えて再生する。
+     * エンディングはゲームループ内で呼ばれるため、ensureResumed を待ってから再生する。
      */
     playBGM(key) {
         if (!this.bgmEnabled || !BGM_ASSETS) return;
-        if (this.ctx) this.ensureResumed();
         const src = BGM_ASSETS[key];
         if (!src) return;
         if (this._currentBGM === key && this._bgmEl && !this._bgmEl.paused) return;
-        this.stopBGM();
-        try {
-            let el = this._bgmEl;
-            if (!el) {
-                el = new Audio();
-                el.loop = true;
-                el.playsInline = true;
-                if (el.setAttribute) {
-                    el.setAttribute('playsinline', '');
-                    el.setAttribute('webkit-playsinline', '');
+        const doPlay = () => {
+            this.stopBGM();
+            try {
+                let el = this._bgmEl;
+                if (!el) {
+                    el = new Audio();
+                    el.loop = true;
+                    el.playsInline = true;
+                    if (el.setAttribute) {
+                        el.setAttribute('playsinline', '');
+                        el.setAttribute('webkit-playsinline', '');
+                    }
+                    this._bgmEl = el;
                 }
-                this._bgmEl = el;
+                el.volume = this.bgmVolume;
+                el.src = src;
+                this._currentBGM = key;
+                el.play().catch(e => console.warn('BGM play failed:', key, e));
+            } catch (e) {
+                console.warn('BGM init failed:', key, e);
             }
-            el.volume = this.bgmVolume;
-            el.src = src;
-            this._currentBGM = key;
-            el.play().catch(e => console.warn('BGM play failed:', key, e));
-        } catch (e) {
-            console.warn('BGM init failed:', key, e);
+        };
+        if (key === 'ending' && this.ctx && this.ctx.state === 'suspended') {
+            this.ensureResumed().then(doPlay);
+        } else {
+            if (this.ctx) this.ensureResumed();
+            doPlay();
         }
     }
 }
