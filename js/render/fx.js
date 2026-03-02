@@ -59,6 +59,7 @@ class FX {
     burst(x, y, col, n = 15, spd = 4, life = 25) {
         const q = (this.gameRef && this.gameRef.qualityParticle != null) ? this.gameRef.qualityParticle : 1;
         n = Math.max(2, Math.floor(n * q));
+        if (q < 0.5) n = Math.min(n, 20);
         for (let i = 0; i < n; i++) {
             const a = Math.random() * Math.PI * 2;
             const s = Math.random() * spd;
