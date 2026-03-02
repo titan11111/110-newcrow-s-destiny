@@ -76,10 +76,10 @@ class Crow {
             const targetVy = my * CFG.PLAYER_SPD;
             const isJoystick = keys['JoystickX'] !== undefined;
             if (isJoystick) {
-                /* 0.82: ほぼ即応しつつフレーム間のカクつきだけ抑制 */
-                const lerpF = 0.82;
-                this.vx = this.vx + (targetVx - this.vx) * lerpF;
-                this.vy = this.vy + (targetVy - this.vy) * lerpF;
+                /* X軸: 0.92で横移動の滑らかさを軽く残す。Y軸: 1.0で上下を完全即応（ユーザー要求）*/
+                const lerpFX = 0.92;
+                this.vx = this.vx + (targetVx - this.vx) * lerpFX;
+                this.vy = targetVy; /* 上下は lerp なし・完全即時 */
             } else {
                 this.vx = targetVx;
                 this.vy = targetVy;

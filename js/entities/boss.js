@@ -37,9 +37,9 @@ class Boss {
         const hpScale = 2 * Math.pow(1.1, idx);
         if (idx === 6) {
             const baseHp = Math.floor((sd.bossHpBase || 660) / 3);
-            /* form0: ×1.4, form1: ×2, form2: ×3。form1/2は防御力20%アップで実質1.2倍耐久 */
+            /* form0: ×1.4, form1: ×2, form2: ×3。全形態とも防御力1.2倍（裂け目＝本体のためform0も1.2倍） */
             const formMul = this.form === 0 ? 1.4 : (this.form === 1 ? 2 : 3);
-            const defMul = (this.form === 1 || this.form === 2) ? 1.2 : 1;
+            const defMul = 1.2;
             this.maxHp = Math.floor(baseHp * formMul * hpScale * defMul);
             this.hp = this.maxHp;
         } else {
@@ -246,7 +246,7 @@ class Boss {
     }
     takeDamage(amt, fx) {
         let actual = amt;
-        if (this.idx === 6 && (this.form === 1 || this.form === 2)) actual = Math.floor(amt * (1 / 1.2));
+        if (this.idx === 6 && (this.form === 0 || this.form === 1 || this.form === 2)) actual = Math.floor(amt * (1 / 1.2));
         if (this.idx === 5 && this.snowQueenGuard) actual = Math.floor(actual * (1 - 0.85));
         const wasAbove10 = this.hp > this.maxHp * 0.1;
         this.hp -= actual;
@@ -2287,6 +2287,38 @@ class Boss {
             if (this.hitFlash > 0) { c.globalCompositeOperation = 'source-over'; c.globalAlpha = 0.5; c.fillStyle = '#ffffff'; c.fillRect(_b5x, _b5y, drawW, drawH); c.globalAlpha = 1; }
             else { c.globalCompositeOperation = 'multiply'; c.globalAlpha = 0.3; c.fillStyle = this.color; c.fillRect(_b5x, _b5y, drawW, drawH); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; }
         } else if (this.idx === 6 && this.form === 0 && IMG.boss7) {
+            /* ラスボス第1形態＝裂け目そのもの: 裂け目演出を描画してからスプライト */
+            const riftPhase = (this.timer || 0) * 0.05;
+            const riftAlpha = 0.45 + Math.sin(riftPhase) * 0.15;
+            c.save();
+            c.globalAlpha = riftAlpha;
+            c.strokeStyle = 'rgba(30,0,60,0.95)';
+            c.lineWidth = 3;
+            const riftRayCount = 7;
+            const riftLen = 95 + Math.sin(riftPhase * 1.3) * 15;
+            for (let i = 0; i < riftRayCount; i++) {
+                const baseAngle = (i / riftRayCount) * Math.PI * 2 + riftPhase * 0.3;
+                const jitter = Math.sin(i * 1.7 + riftPhase * 2) * 0.15;
+                const a1 = baseAngle - jitter;
+                const a2 = baseAngle + jitter;
+                c.beginPath();
+                c.moveTo(0, 0);
+                c.lineTo(Math.cos(a1) * riftLen, Math.sin(a1) * riftLen);
+                c.moveTo(0, 0);
+                c.lineTo(Math.cos(a2) * riftLen * 0.6, Math.sin(a2) * riftLen * 0.6);
+                c.stroke();
+            }
+            c.strokeStyle = 'rgba(80,20,120,0.7)';
+            c.lineWidth = 1.5;
+            for (let i = 0; i < riftRayCount; i++) {
+                const baseAngle = (i / riftRayCount) * Math.PI * 2 + riftPhase * 0.2 + 0.5;
+                const len = riftLen * (0.4 + Math.sin(riftPhase + i) * 0.2);
+                c.beginPath();
+                c.moveTo(0, 0);
+                c.lineTo(Math.cos(baseAngle) * len, Math.sin(baseAngle) * len);
+                c.stroke();
+            }
+            c.restore();
             /* BOSS7（ラスボス第1形態）: 2列×3行 6フレーム。idle [0,1] / charge [0,1,2] / burst 3 / discharge [4,5] / full [0..5] */
             const img = IMG.boss7;
             const BOSS7_COLS = 2, BOSS7_ROWS = 3, BOSS7_TOTAL = 6;
