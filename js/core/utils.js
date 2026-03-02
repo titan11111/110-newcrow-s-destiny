@@ -15,6 +15,22 @@ const hex2rgb = h => [parseInt(h.substr(1, 2), 16), parseInt(h.substr(3, 2), 16)
 const rgb    = r => `rgb(${r[0] | 0},${r[1] | 0},${r[2] | 0})`;
 const lerpC  = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
 
+/**
+ * モバイル（iOS/Android）検出フラグ。
+ * iOS/Androidでは shadowBlur を無効化し、グラデーション生成を最小限に抑えて
+ * Safari/WebKit の Canvas 処理負荷を大幅に削減する。
+ */
+const _ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(_ua);
+
+/**
+ * noShadow フラグ: true のとき全 shadowBlur/shadowColor をスキップする。
+ * iOS では初期値 true。adaptiveQuality が FPS 低下を検知したときも true に切り替わる。
+ */
+global.CrowDestiny = global.CrowDestiny || {};
+global.CrowDestiny.IS_MOBILE = IS_MOBILE;
+global.CrowDestiny.noShadow  = IS_MOBILE;
+
 /** 配列から inactive な要素を in-place で削除（GC 負荷軽減・iOS 対策） */
 function removeInactive(arr, isActiveFn) {
     let i = arr.length - 1;

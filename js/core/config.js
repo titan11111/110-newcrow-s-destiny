@@ -4,6 +4,11 @@
 (function (global) {
 'use strict';
 
+/** iOS/Retina でキャンバスを window サイズでリサイズする場合の devicePixelRatio 上限（描画負荷軽減） */
+const MAX_DEVICE_PIXEL_RATIO = 1.5;
+/** true または URL に #fps があるとき FPS を画面左上に表示（最適化検証用） */
+const DEBUG_FPS = false;
+
 const CFG = {
     W: 960,
     H: 540,
@@ -85,6 +90,8 @@ const BGM_ASSETS = {
 
 global.CrowDestiny = global.CrowDestiny || {};
 global.CrowDestiny.CFG = CFG;
+global.CrowDestiny.MAX_DEVICE_PIXEL_RATIO = MAX_DEVICE_PIXEL_RATIO;
+global.CrowDestiny.DEBUG_FPS = DEBUG_FPS;
 global.CrowDestiny.ANIM_FPS = ANIM_FPS;
 global.CrowDestiny.FRAME_DUR = FRAME_DUR;
 global.CrowDestiny.ASSETS = ASSETS;
