@@ -12,11 +12,11 @@ class SoundManager {
         this.ctx = null;
         this.initialized = false;
         this.seEnabled = true;
-        this.seVolume = 0.7;
+        this.seVolume = 0.77;   /* 0.7 × 1.1（ゲーム全体の音量を1.1倍） */
         this.bufferCache = {};
         this.seGain = null;
         this.bgmEnabled = true;
-        this.bgmVolume = 0.6;
+        this.bgmVolume = 0.66;  /* 0.6 × 1.1（ゲーム全体の音量を1.1倍） */
         this._bgmEl = null;
         this._currentBGM = null;
     }
