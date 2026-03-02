@@ -39,7 +39,7 @@ const ASSETS = {
     title: 'images/Bauhaus-inspired_ending_illustration_with_hopeful_-1771383063897.png',
     bg: 'images/Remove_background_from_this_image_to_create_transp-1771383320321.png',
     crowSheet: 'images/Remove_background_from_this_image_to_create_transp-1771383241042.png',
-    enemySheet: 'images/Remove_background_from_this_image_to_create_transp-1771383257114.png',
+    enemySheet: 'images/Remove_background_from_this_image_to_create_transp-1771383161769.png',
     /* 敵スプライト（ステージ2・3・4・5・6・7で30%出現。左向き） */
     enemy2: 'images/enemy2.png',
     enemy3: 'images/enemy3.png',
@@ -84,7 +84,7 @@ const BGM_ASSETS = {
     boss7: 'audio/boss7.mp3',
     lastboss1: 'audio/lastboss.mp3',
     lastboss2: 'audio/lastboss2.mp3',
-    ending: 'audio/ending.mp3',
+    ending: 'audio/endding.mp3',
     gameover: 'audio/gameover.mp3'
 };
 

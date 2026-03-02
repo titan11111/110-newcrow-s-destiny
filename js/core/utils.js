@@ -38,6 +38,8 @@ function removeInactive(arr, isActiveFn) {
         if (!isActiveFn(arr[i])) {
             arr[i] = arr[arr.length - 1];
             arr.pop();
+            /* 末尾を削除した場合、i が配列外になるので補正（undefined を isActiveFn に渡さない） */
+            if (i >= arr.length) i = arr.length - 1;
         } else {
             i--;
         }
