@@ -160,7 +160,7 @@ class VirtualJoystick {
         this._zoneEl = zoneEl;
         this._baseEl = document.getElementById('joystick-base');
         this._stickEl = document.getElementById('joystick-stick');
-        this._htmlMaxRadius = 80; /* CSS px: ノブ可動範囲 */
+        this._htmlMaxRadius = 120; /* CSS px: ノブ可動範囲（80→120に拡大。少ない指の動きでフルチルト可能） */
 
         /* 起動時は非表示 */
         if (this._baseEl) this._baseEl.style.opacity = '0';
