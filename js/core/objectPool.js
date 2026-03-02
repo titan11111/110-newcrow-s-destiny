@@ -29,22 +29,41 @@ ObjectPool.prototype.get = function () {
 ObjectPool.prototype.release = function (obj) {
     const i = this.active.indexOf(obj);
     if (i !== -1) {
-        this.active.splice(i, 1);
+        /* swap-with-last O(1): splice(O(n))不要 */
+        const last = this.active[this.active.length - 1];
+        this.active[i] = last;
+        this.active.pop();
         this.resetFn(obj);
         this.pool.push(obj);
     }
 };
 
-/** active のうち active フラグが false のものをプールに返す */
+/** active のうち active フラグが false のものをプールに返す（O(n)・swap-with-last） */
 ObjectPool.prototype.releaseInactive = function () {
-    for (let i = this.active.length - 1; i >= 0; i--) {
-        if (!this.active[i].active) this.release(this.active[i]);
+    let i = this.active.length - 1;
+    while (i >= 0) {
+        const obj = this.active[i];
+        if (!obj.active) {
+            /* swap-with-last で indexOf 不要の O(1) 削除 */
+            this.active[i] = this.active[this.active.length - 1];
+            this.active.pop();
+            this.resetFn(obj);
+            this.pool.push(obj);
+            /* pop 後に i が配列外を指す可能性があるので境界を補正 */
+            if (i >= this.active.length) i = this.active.length - 1;
+        } else {
+            i--;
+        }
     }
 };
 
-/** すべての active をプールに返す（ステージ開始・リスタート時） */
+/** すべての active をプールに返す（ステージ開始・リスタート時）O(n)に最適化 */
 ObjectPool.prototype.releaseAll = function () {
-    while (this.active.length > 0) this.release(this.active[0]);
+    for (let i = 0; i < this.active.length; i++) {
+        this.resetFn(this.active[i]);
+        this.pool.push(this.active[i]);
+    }
+    this.active.length = 0;
 };
 
 /** 敵弾の同時存在上限（ステージ6等で画面が弾だらけになるのを防ぐ） */
