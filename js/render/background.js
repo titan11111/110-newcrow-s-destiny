@@ -42,16 +42,24 @@ class Background {
         this.mid.forEach(o => { o.x -= s * 0.65 * d; if (o.x < -120) { o.x = CFG.W + ri(50, 250); o.y = rr(250, 460); } });
     }
     draw(c) {
-        const g = c.createLinearGradient(0, 0, 0, CFG.H);
-        g.addColorStop(0, rgb(this.topC)); g.addColorStop(0.75, rgb(this.botC)); g.addColorStop(1, rgb(this.gndC));
-        c.fillStyle = g; c.fillRect(0, 0, CFG.W, CFG.H);
+        /* グラデーションキャッシュ: 色が実質変わったときだけ再生成（iOS GPU 負荷軽減） */
+        const gradKey = `${this.topC[0]|0},${this.topC[1]|0},${this.topC[2]|0}|${this.botC[0]|0},${this.botC[1]|0},${this.botC[2]|0}|${this.gndC[0]|0},${this.gndC[1]|0},${this.gndC[2]|0}`;
+        if (!this._cachedGrad || gradKey !== this._gradKey) {
+            this._cachedGrad = c.createLinearGradient(0, 0, 0, CFG.H);
+            this._cachedGrad.addColorStop(0, rgb(this.topC));
+            this._cachedGrad.addColorStop(0.75, rgb(this.botC));
+            this._cachedGrad.addColorStop(1, rgb(this.gndC));
+            this._gradKey = gradKey;
+        }
+        c.fillStyle = this._cachedGrad; c.fillRect(0, 0, CFG.W, CFG.H);
         if (IMG.bg) {
             c.save(); c.globalAlpha = 0.35;
             const bw = IMG.bg.naturalWidth || 800, bh = IMG.bg.naturalHeight || 400;
             const scale = Math.max(CFG.W / bw, CFG.H / bh) * 1.2, ww = bw * scale;
             let par = (-this.scrollX * 0.2) % ww; if (par > 0) par -= ww;
-            c.drawImage(IMG.bg, 0, 0, bw, bh, par, 0, ww, bh * scale);
-            c.drawImage(IMG.bg, 0, 0, bw, bh, par + ww, 0, ww, bh * scale);
+            const px = Math.floor(par), pw = Math.floor(ww), ph = Math.floor(bh * scale);
+            c.drawImage(IMG.bg, 0, 0, bw, bh, px, 0, pw, ph);
+            c.drawImage(IMG.bg, 0, 0, bw, bh, Math.floor(par + ww), 0, pw, ph);
             c.restore();
         }
         c.fillStyle = rgb(this.gndC); c.fillRect(0, CFG.H - 50, CFG.W, 50);
@@ -67,7 +75,8 @@ class Background {
             c.fillStyle = "rgba(0,0,0,0.12)";
             this.far.forEach(o => { c.save(); c.translate(o.x, o.y); c.scale(o.s, o.s); c.fillRect(-15, -40, 30, 55); c.fillRect(-20, -30, 10, 45); c.restore(); });
             c.fillStyle = "rgba(200,180,160,0.08)";
-            for (let i = 0; i < 30; i++) { const x = ((i * 73 + t * 0.4) % 1100) - 70, y = (i * 47 + t * 0.2) % 500; c.fillRect(x, y, rr(2, 4), rr(2, 4)); }
+            /* rr() を描画ループ内で呼ぶと毎フレーム乱数演算が走るため固定サイズで代替 */
+            for (let i = 0; i < 30; i++) { const x = ((i * 73 + t * 0.4) % 1100) - 70, y = (i * 47 + t * 0.2) % 500; c.fillRect(x, y, 3, 3); }
         } else if (bt === "SEWER") {
             c.strokeStyle = "rgba(0,80,60,0.25)"; c.lineWidth = 8;
             for (let i = 0; i < 4; i++) {
