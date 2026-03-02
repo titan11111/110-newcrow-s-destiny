@@ -63,9 +63,21 @@ class Game {
         this.crow = new Crow(this.sound);
         this.bg = new Background();
         /** FPS に応じた品質（0.25〜1）。adaptiveQualityControl で更新 */
-        this.qualityParticle = 1;
-        this.qualityEffect = 1;
+        /* iOS/Android はゲーム開始時から低品質設定でスタートし、FPS が安定したら徐々に上げる */
+        const _startQ = global.CrowDestiny.IS_MOBILE ? 0.3 : 1;
+        this.qualityParticle = _startQ;
+        this.qualityEffect = _startQ;
         this._lastLoopTime = 0;
+        /** FPS計測（DEBUG_FPS または #fps で画面表示・最適化検証用） */
+        this._fpsFrameCount = 0;
+        this._fpsLastTime = 0;
+        this._fpsValue = 0;
+        /** 毎秒のFPSを溜めて最小・最大・平均を計算（以前 vs 今回の比較用） */
+        this._fpsHistory = [];
+        this._fpsMin = 0;
+        this._fpsMax = 0;
+        this._fpsSum = 0;
+        this._fpsSamples = 0;
         this.fx = new FX(this);
         this.txt = new TextOverlay();
         this.efx = new EffectOverlay();
@@ -134,6 +146,43 @@ class Game {
         document.addEventListener('gesturestart', e => e.preventDefault(), { passive: false });
         document.addEventListener('gesturechange', e => e.preventDefault(), { passive: false });
         document.addEventListener('gestureend', e => e.preventDefault(), { passive: false });
+
+        const showFpsUi = (typeof global.CrowDestiny !== 'undefined' && global.CrowDestiny.DEBUG_FPS) || (typeof location !== 'undefined' && location.hash === '#fps');
+        if (showFpsUi) {
+            const wrap = document.createElement('div');
+            wrap.id = 'fps-record-wrap';
+            wrap.style.cssText = 'position:absolute;top:36px;left:8px;z-index:9999;display:flex;gap:6px;pointer-events:auto;';
+            const btnSave = document.createElement('button');
+            btnSave.type = 'button';
+            btnSave.textContent = 'FPS記録';
+            btnSave.title = '今回の最小・最大・平均を「以前」として保存（最適化前の計測を上書き）';
+            btnSave.style.cssText = 'padding:4px 8px;font-size:11px;cursor:pointer;background:#2a2;color:#fff;border:none;border-radius:4px;';
+            btnSave.addEventListener('click', () => {
+                const avg = this._fpsSamples > 0 ? Math.round(this._fpsSum / this._fpsSamples) : 0;
+                try {
+                    localStorage.setItem('crow_fps_before', JSON.stringify({ min: this._fpsMin, max: this._fpsMax, avg: avg }));
+                    btnSave.textContent = '記録した';
+                    setTimeout(() => { btnSave.textContent = 'FPS記録'; }, 1500);
+                } catch (e) { btnSave.textContent = 'Err'; }
+            });
+            const btnClear = document.createElement('button');
+            btnClear.type = 'button';
+            btnClear.textContent = 'クリア';
+            btnClear.title = '「以前」の記録を削除';
+            btnClear.style.cssText = 'padding:4px 8px;font-size:11px;cursor:pointer;background:#633;color:#fff;border:none;border-radius:4px;';
+            btnClear.addEventListener('click', () => {
+                try { localStorage.removeItem('crow_fps_before'); } catch (e) {}
+                btnClear.textContent = '削除した';
+                setTimeout(() => { btnClear.textContent = 'クリア'; }, 1000);
+            });
+            wrap.appendChild(btnSave);
+            wrap.appendChild(btnClear);
+            const container = document.getElementById('game-container');
+            if (container) {
+                container.style.position = 'relative';
+                container.appendChild(wrap);
+            }
+        }
 
         loadAssets().then(() => {
             const ls = document.getElementById('loading-screen');
@@ -336,8 +385,9 @@ class Game {
             this.efx.add("BARRIER", "#3498DB", 80);
             this.fx.burst(cx, cy, '#aaeeff', 28, 7);
         } else if (idx === 5) {
-            /* 白スキル: 100粒・3秒(180f)・damage5・ゆっくり漂う */
-            for (let i = 0; i < 100; i++) {
+            /* 白スキル: 100粒（モバイルは40粒）・3秒(180f)・damage5・ゆっくり漂う */
+            const snowCount = global.CrowDestiny.IS_MOBILE ? 40 : 100;
+            for (let i = 0; i < snowCount; i++) {
                 this.snowParticles.push({
                     x: Math.random() * (W + 100) - 50,
                     y: Math.random() * (H + 50) - 25,
@@ -477,7 +527,7 @@ class Game {
             this.flockCrows.forEach(fc => {
                 fc.life = (fc.life || 0) + d;
                 fc.x += fc.vx * d;
-                const wave = Math.sin(fc.life * 0.25) * 6 * d;
+                const wave = Math.sin(fc.life * 0.25) * 12 * d;
                 fc.y += (fc.vy || 0) * d + wave;
                 if (fc.x > CFG.W + 60) fc.active = false;
             });
@@ -539,7 +589,7 @@ class Game {
             this.flockCrows.forEach(fc => {
                 fc.life = (fc.life || 0) + d;
                 fc.x += fc.vx * d;
-                const wave = Math.sin(fc.life * 0.25) * 6 * d;
+                const wave = Math.sin(fc.life * 0.25) * 12 * d;
                 fc.y += (fc.vy || 0) * d + wave;
                 if (fc.x > CFG.W + 60) fc.active = false;
             });
@@ -653,7 +703,7 @@ class Game {
         this.obstacles.forEach(o => { if (inView(o.x, o.y)) o.draw(c); });
         this.relics.forEach(r => { if (inView(r.x, r.y)) r.draw(c); });
         this.enemies.forEach(e => { if (inView(e.x, e.y)) e.draw(c, this); });
-        this.eBullets.forEach(b => { if (!b.active || !inView(b.x, b.y)) return; c.save(); c.globalAlpha = 0.85; c.fillStyle = b.color; c.beginPath(); c.arc(b.x, b.y, b.r || 5, 0, Math.PI * 2); c.fill(); c.globalAlpha = 0.3; c.beginPath(); c.arc(b.x, b.y, (b.r || 5) + 4, 0, Math.PI * 2); c.fill(); c.restore(); });
+        this.eBullets.forEach(b => { if (!b.active || !inView(b.x, b.y)) return; c.save(); c.globalAlpha = 0.85; c.fillStyle = b.color; const bx = Math.floor(b.x), by = Math.floor(b.y); c.beginPath(); c.arc(bx, by, b.r || 5, 0, Math.PI * 2); c.fill(); c.globalAlpha = 0.3; c.beginPath(); c.arc(bx, by, (b.r || 5) + 4, 0, Math.PI * 2); c.fill(); c.restore(); });
         this.crow.drawFeathers(c); this.crow.drawTrail(c);
         if (this.crow.cloneCrowT > 0 && this.crow.posHistory.length > 0) {
             /* 0.3秒遅延位置に分身を描画（本体との差分オフセット） */
@@ -662,12 +712,12 @@ class Game {
             /* 残り時間が少なくなったらフェードアウト（最後3秒で点滅） */
             const t = this.crow.cloneCrowT;
             const alpha = t < 180 ? (t % 20 < 10 ? 0.3 : 0.55) : 0.55;
-            c.save(); c.globalAlpha = alpha; c.translate(dx, dy); c.scale(0.9, 0.9); this.crow.draw(c); c.restore();
+            c.save(); c.globalAlpha = alpha; c.translate(Math.floor(dx), Math.floor(dy)); c.scale(0.9, 0.9); this.crow.draw(c); c.restore();
         }
         this.flockCrows.forEach(fc => {
             if (!fc.active || !inView(fc.x, fc.y)) return;
             c.save();
-            c.translate(fc.x, fc.y);
+            c.translate(Math.floor(fc.x), Math.floor(fc.y));
             if (qEff >= 0.5) { c.shadowColor = '#E74C3C'; c.shadowBlur = 10; }
             /* 胴体 */
             c.fillStyle = '#c0392b';
@@ -684,7 +734,7 @@ class Game {
         this.grayOrbs.forEach(o => {
             if (!o.active || !inView(o.x, o.y)) return;
             c.save();
-            c.translate(o.x, o.y);
+            c.translate(Math.floor(o.x), Math.floor(o.y));
             c.rotate(o.rot || 0);
             if (qEff >= 0.5) { c.shadowColor = '#95a5a6'; c.shadowBlur = 6; }
             c.fillStyle = 'rgba(149, 165, 166, 0.88)';
@@ -705,7 +755,7 @@ class Game {
             c.save();
             if (qEff >= 0.5) { c.shadowColor = '#aaddff'; c.shadowBlur = 5; }
             c.fillStyle = `rgba(220,240,255,${alpha})`;
-            c.beginPath(); c.arc(s.x, s.y, r, 0, Math.PI * 2); c.fill();
+            c.beginPath(); c.arc(Math.floor(s.x), Math.floor(s.y), r, 0, Math.PI * 2); c.fill();
             c.restore();
         });
         this.crow.draw(c); if (this.boss) this.boss.draw(c); this.fx.draw(c); this.fx.drawArenaEffects(c); this.fx.drawFlash(c); this.efx.draw(c, this.crow);
@@ -726,19 +776,60 @@ class Game {
         if (this.state === STATE.VICTORY) drawVictoryScene(c, this);
         if (this.fadeA > 0) { c.fillStyle = `rgba(0,0,0,${this.fadeA})`; c.fillRect(0, 0, CFG.W, CFG.H); }
         if (this.paused) drawPauseOverlay(c);
+        if ((typeof global.CrowDestiny !== 'undefined' && global.CrowDestiny.DEBUG_FPS) || (typeof location !== 'undefined' && location.hash === '#fps')) {
+            c.save();
+            const avg = this._fpsSamples > 0 ? Math.round(this._fpsSum / this._fpsSamples) : 0;
+            const prev = (function () {
+                try {
+                    const s = localStorage.getItem('crow_fps_before');
+                    return s ? JSON.parse(s) : null;
+                } catch (e) { return null; }
+            })();
+            c.font = 'bold 13px monospace';
+            c.fillStyle = 'rgba(0,0,0,0.7)';
+            c.fillRect(6, 4, 200, prev ? 72 : 42);
+            c.strokeStyle = 'rgba(0,255,100,0.9)';
+            c.lineWidth = 1;
+            c.strokeRect(6, 4, 200, prev ? 72 : 42);
+            c.fillStyle = 'rgba(0,255,100,0.95)';
+            c.fillText('今回  FPS: ' + (this._fpsValue || '-') + '  |  最小: ' + this._fpsMin + '  最大: ' + this._fpsMax + '  平均: ' + avg, 10, 20);
+            if (prev) {
+                c.fillStyle = 'rgba(255,200,80,0.95)';
+                c.fillText('以前  FPS: 最小: ' + (prev.min || '-') + '  最大: ' + (prev.max || '-') + '  平均: ' + (prev.avg || '-'), 10, 38);
+                c.fillStyle = 'rgba(180,180,255,0.9)';
+                c.font = '11px monospace';
+                c.fillText('記録更新 = 今回の値を「以前」に上書き', 10, 54);
+                c.fillText('クリア = 以前の記録を削除', 10, 66);
+            } else {
+                c.fillStyle = 'rgba(180,180,255,0.9)';
+                c.font = '11px monospace';
+                c.fillText('「以前」を記録: 画面上の「FPS記録」ボタン', 10, 38);
+            }
+            c.restore();
+        }
         c.restore();
     }
 
-    /** FPS に応じてパーティクル・エフェクト品質を加減し、低スペックでもプレイ可能に。 */
+    /** FPS に応じてパーティクル・エフェクト品質を加減し、低スペックでもプレイ可能に。
+     *  iOS/低FPS 時は shadowBlur も無効化（iOS Safari では最大の負荷要因）。 */
     _adaptiveQuality(deltaMs) {
         if (deltaMs <= 0 || deltaMs > 500) return;
         const fps = 1000 / deltaMs;
-        if (fps < 30) {
-            this.qualityParticle *= 0.92;
-            this.qualityEffect *= 0.95;
+        if (fps < 25) {
+            /* 25fps 未満: 品質を急速に落として復帰を優先。shadowBlur も無効化 */
+            this.qualityParticle *= 0.88;
+            this.qualityEffect *= 0.90;
+            global.CrowDestiny.noShadow = true;
+        } else if (fps < 40) {
+            this.qualityParticle *= 0.94;
+            this.qualityEffect *= 0.96;
         } else if (fps > 55) {
             this.qualityParticle = Math.min(1, this.qualityParticle * 1.04);
             this.qualityEffect = Math.min(1, this.qualityEffect * 1.02);
+            /* デスクトップ限定: FPS 安定後に shadowBlur を再解放 */
+            if (!global.CrowDestiny.IS_MOBILE && this.qualityEffect >= 0.9) {
+                global.CrowDestiny.noShadow = false;
+            }
         }
         this.qualityParticle = clamp(this.qualityParticle, 0.25, 1);
         this.qualityEffect = clamp(this.qualityEffect, 0.25, 1);
@@ -749,6 +840,21 @@ class Game {
         const deltaMs = this._lastLoopTime > 0 ? timestamp - this._lastLoopTime : 0;
         if (deltaMs > 0) this._adaptiveQuality(deltaMs);
         this._lastLoopTime = timestamp;
+        const showFps = (typeof global.CrowDestiny !== 'undefined' && global.CrowDestiny.DEBUG_FPS) || (typeof location !== 'undefined' && location.hash === '#fps');
+        if (showFps) {
+            this._fpsFrameCount++;
+            if (timestamp - this._fpsLastTime >= 1000) {
+                this._fpsValue = this._fpsFrameCount;
+                this._fpsHistory.push(this._fpsValue);
+                if (this._fpsHistory.length > 120) this._fpsHistory.shift();
+                this._fpsMin = this._fpsSamples === 0 ? this._fpsValue : Math.min(this._fpsMin, this._fpsValue);
+                this._fpsMax = this._fpsSamples === 0 ? this._fpsValue : Math.max(this._fpsMax, this._fpsValue);
+                this._fpsSum += this._fpsValue;
+                this._fpsSamples++;
+                this._fpsFrameCount = 0;
+                this._fpsLastTime = timestamp;
+            }
+        }
         const dt = deltaMs > 0 ? Math.min(deltaMs / 1000, DT_CAP) : 1 / FPS_BASE;
         try {
             this.update(dt);
