@@ -47,7 +47,7 @@ const FPS_BASE = 60;
 /** dt の上限（秒）。スパイク吸収で大きなフレーム落ち時に飛びすぎを防ぐ */
 const DT_CAP = 0.05;
 /** 描画カリング: このマージン（px）外のオブジェクトは描画しない（iOS 描画負荷軽減） */
-const CULL_MARGIN = 80;
+const CULL_MARGIN = 100;
 /** ステージクリア前フリーズ時間（フレーム）。この間は攻撃・残像を止めてから弾・残像をクリアする */
 const STAGE_CLEAR_FREEZE_DUR = 30;
 
@@ -141,11 +141,18 @@ class Game {
         document.addEventListener('touchend', e => {
             const now = Date.now(); if (now - lastTap <= 300) e.preventDefault(); lastTap = now;
             if (!this.sound.initialized) this.sound.init();
-            if (this.state === 'TITLE') this.sound.playBGM('opening');
+            if (this.state === STATE.TITLE) this.sound.playBGM('opening');
         }, false);
         document.addEventListener('gesturestart', e => e.preventDefault(), { passive: false });
         document.addEventListener('gesturechange', e => e.preventDefault(), { passive: false });
         document.addEventListener('gestureend', e => e.preventDefault(), { passive: false });
+
+        /* iOS: バックグラウンドから復帰したときに AudioContext を再開 */
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && this.sound && this.sound.ctx && this.sound.ctx.state === 'suspended') {
+                this.sound.ctx.resume().catch(() => {});
+            }
+        });
 
         const showFpsUi = (typeof global.CrowDestiny !== 'undefined' && global.CrowDestiny.DEBUG_FPS) || (typeof location !== 'undefined' && location.hash === '#fps');
         if (showFpsUi) {
@@ -184,11 +191,14 @@ class Game {
             }
         }
 
-        loadAssets().then(() => {
+        const hideLoading = () => {
             const ls = document.getElementById('loading-screen');
             if (ls) { ls.style.opacity = '0'; ls.style.pointerEvents = 'none'; }
             setTimeout(() => { if (ls) ls.style.display = 'none'; }, 1500);
-        });
+        };
+        loadAssets().then(hideLoading);
+        /* iOS/遅い回線: アセットが遅くても一定時間でローディングを隠してゲーム開始可能にする */
+        setTimeout(hideLoading, 8000);
         requestAnimationFrame(t => this.loop(t));
     }
 
@@ -473,6 +483,8 @@ class Game {
         delete this.keys['JoystickX'];
         delete this.keys['JoystickY'];
         this.joystick.update();
+        /* SE同時再生カウンターをフレーム先頭でリセット（shoot は onended でデクリメント、他は毎フレームリセット） */
+        if (this.sound) { this.sound._hitCount = 0; this.sound._bossShotCount = 0; }
         this.fx.update(d); this.txt.update(d); this.efx.update(d); this.bg.update(d);
         /** 覚醒レベル: Lv.2=10000, Lv.3=25000, Lv.4=55000, Lv.5=80000, Lv.6=100000。レベルアップ時は「LEVEL UP!」表示＋SE */
         if (this.crow) {
@@ -508,7 +520,12 @@ class Game {
             return;
         }
         if (this.state === STATE.NARRATION) {
-            if (!this._narrationShown) { this._narrationShown = true; this.txt.show(`— 第${this.stageIdx + 1}章 : ${this.sd.name} —`, "#ff4d00", 200, 38, CFG.W / 2, CFG.H / 2 - 60); this.sd.desc.split('\n').forEach((l, i) => this.txt.show(l, "#e0cda7", 200, 26, CFG.W / 2, CFG.H / 2 + i * 40)); }
+            if (!this._narrationShown) {
+                this._narrationShown = true;
+                this.txt.show(`— 第${this.stageIdx + 1}章 : ${(this.sd && this.sd.name) || '—'} —`, "#ff4d00", 200, 38, CFG.W / 2, CFG.H / 2 - 60);
+                const descLines = (this.sd && this.sd.desc) ? String(this.sd.desc).split('\n') : [];
+                descLines.forEach((l, i) => this.txt.show(l, "#e0cda7", 200, 26, CFG.W / 2, CFG.H / 2 + i * 40));
+            }
             if (this.stateT > 220 || (this.stateT > 40 && start)) {
                 this.state = STATE.PLAYING; this.stateT = 0;
                 this.sound.playBGM('stage' + (this.stageIdx + 1));
@@ -648,7 +665,7 @@ class Game {
                 } else {
                     this.score += 1000 * (this.stageIdx + 1); for (let i = 0; i < 3; i++) this.relics.push(new Relic(this.boss.x + rr(-40, 40), this.boss.y + rr(-20, 20)));
                     this.crow.unlockedBossAbilities[this.boss.idx] = true;
-                    this.state = STATE.STAGE_CLEAR_FREEZE; this.stateT = 0; this.sound.stopBGM(); this.sound.playStageClear();
+                    this.state = STATE.STAGE_CLEAR_FREEZE; this.stateT = 0; this.sound.playStageClear();
                 }
             } return;
         }
@@ -676,10 +693,14 @@ class Game {
             }
             if (this.stateT > 180) this.fadeD = 1;
             if (this.stateT > 250) {
-                if (this.stageIdx < STAGES.length - 1) {
+                const hasNextStage = STAGES && this.stageIdx < STAGES.length - 1;
+                if (hasNextStage) {
                     this.sound.playStageTransition();
                     this.stageIdx++; this.crow.x = 100; this.crow.y = CFG.H / 2 - 4; this.fadeD = -1; this.startStage();
-                } else { this.state = STATE.VICTORY; this.stateT = 0; this.fadeD = -1; this.sound.playBGM('ending'); }
+                } else {
+                    this.state = STATE.VICTORY; this.stateT = 0; this.fadeD = -1;
+                    if (this.sound) this.sound.playBGM('ending');
+                }
             } return;
         }
         if (this.state === STATE.GAME_OVER) { if (this.stateT > 90 && start) this.retryCurrentStage(); return; }
@@ -687,7 +708,9 @@ class Game {
     }
 
     draw() {
-        const c = this.c; c.save(); this.fx.applyShake(c); this.bg.draw(c);
+        const c = this.c;
+        if (!c) return;
+        c.save(); this.fx.applyShake(c); this.bg.draw(c);
         if (this.state === STATE.INSTRUCTIONS) { drawInstructionsScene(c, this); c.restore(); return; }
         if (this.state === STATE.TITLE) { drawTitleScene(c, this); c.restore(); return; }
         if (this.state === STATE.LAST_BOSS_2TO3_CUTSCENE) {
@@ -819,6 +842,10 @@ class Game {
             /* 25fps 未満: 品質を急速に落として復帰を優先。shadowBlur も無効化 */
             this.qualityParticle *= 0.88;
             this.qualityEffect *= 0.90;
+            global.CrowDestiny.noShadow = true;
+        } else if (fps < 30) {
+            this.qualityParticle *= 0.92;
+            this.qualityEffect *= 0.93;
             global.CrowDestiny.noShadow = true;
         } else if (fps < 40) {
             this.qualityParticle *= 0.94;
