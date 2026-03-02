@@ -19,15 +19,19 @@ const JOYSTICK_ALPHA_ACTIVE = 0.75;
 const JOYSTICK_FADE_FRAMES = 9;
 
 const SETTINGS_KEY = 'crowDestiny_joystick_settings';
-const DEFAULT_SETTINGS = { deadZone: 0.15, sensitivity: 1.0 };
+const DEFAULT_SETTINGS = { deadZone: 0.07, sensitivity: 1.0 };
 
 function loadJoystickSettings() {
     try {
         const saved = localStorage.getItem(SETTINGS_KEY);
         if (saved) {
             const parsed = JSON.parse(saved);
+            /* 旧設定でdeadZoneが0.12以上ならデフォルト値(0.07)にリセット */
+            const dz = (parsed.deadZone != null && parsed.deadZone < 0.12)
+                ? clamp(parsed.deadZone, 0, 0.4)
+                : DEFAULT_SETTINGS.deadZone;
             return {
-                deadZone: clamp(parsed.deadZone ?? DEFAULT_SETTINGS.deadZone, 0, 0.4),
+                deadZone: dz,
                 sensitivity: clamp(parsed.sensitivity ?? DEFAULT_SETTINGS.sensitivity, 0.5, 2.0)
             };
         }
@@ -216,18 +220,26 @@ class VirtualJoystick {
         }
     }
 
-    /** ベースとノブのCSS位置を更新 */
+    /** ベースとノブのCSS位置を更新（WEBで左端見切れしないようゾーン内にクランプ） */
     _positionHTMLJoystick(baseX, baseY, knobX, knobY) {
         if (!this._baseEl || !this._stickEl) return;
         const baseR = 80;  /* joystick-base の半径(px): width/2 */
         const knobR = 35;  /* joystick-stick の半径(px): width/2 */
+        let bx = baseX;
+        let by = baseY;
+        if (this._zoneEl) {
+            const w = this._zoneEl.clientWidth || 999;
+            const h = this._zoneEl.clientHeight || 999;
+            bx = clamp(baseX, baseR, Math.max(baseR, w - baseR));
+            by = clamp(baseY, baseR, Math.max(baseR, h - baseR));
+        }
         this._baseEl.style.position = 'absolute';
-        this._baseEl.style.left = (baseX - baseR) + 'px';
-        this._baseEl.style.top  = (baseY - baseR) + 'px';
+        this._baseEl.style.left = (bx - baseR) + 'px';
+        this._baseEl.style.top  = (by - baseR) + 'px';
         this._stickEl.style.position = 'absolute';
         this._stickEl.style.transform = 'none';
-        this._stickEl.style.left = (knobX - baseX + baseR - knobR) + 'px';
-        this._stickEl.style.top  = (knobY - baseY + baseR - knobR) + 'px';
+        this._stickEl.style.left = (knobX - bx + baseR - knobR) + 'px';
+        this._stickEl.style.top  = (knobY - by + baseR - knobR) + 'px';
     }
 
     update() {
@@ -244,8 +256,12 @@ class VirtualJoystick {
             fx /= mag;
             fy /= mag;
         }
-        /* タッチ中のみコールバックを呼ぶ。未タッチ時は game 側で JoystickX/Y を未定義にし、キーボード・D-pad が使われる */
-        if (this.joystickTouchId !== null) this.onKeysUpdate(fx, fy);
+        /* タッチ中: 入力を通知。未タッチ時: undefined を送り game 側で keys を削除してキーボード入力に戻す */
+        if (this.joystickTouchId !== null) {
+            this.onKeysUpdate(fx, fy);
+        } else {
+            this.onKeysUpdate(undefined, undefined);
+        }
     }
 
     draw(c) {
