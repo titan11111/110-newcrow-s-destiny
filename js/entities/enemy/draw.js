@@ -8,11 +8,14 @@ const SPRITE_LAYOUTS = global.CrowDestiny.EnemyConfig.SPRITE_LAYOUTS;
 const HORIZONTAL_FLOAT_6 = global.CrowDestiny.EnemyConfig.HORIZONTAL_FLOAT_6;
 const FLOAT_FRAME_INTERVAL = global.CrowDestiny.EnemyConfig.FLOAT_FRAME_INTERVAL;
 const ENEMY6_TOTAL_FRAMES = global.CrowDestiny.EnemyConfig.ENEMY6_TOTAL_FRAMES || 5;
+/** shadowBlur 禁止フラグ参照 */
+const ns = () => global.CrowDestiny.noShadow;
 
 function drawEnemy(e, c, qualityEffect) {
     if (!e.active) return;
     if (qualityEffect == null) qualityEffect = 1;
-    const useHeavyEffect = qualityEffect >= 0.5;
+    /* noShadow が true の場合は useHeavyEffect を強制 false にして shadowBlur を一切使わせない */
+    const useHeavyEffect = qualityEffect >= 0.5 && !ns();
     const IMG = global.CrowDestiny && global.CrowDestiny.IMG;
     const f = e.anim.frame;
     const s = e.anim.state;
@@ -51,7 +54,7 @@ function drawEnemy(e, c, qualityEffect) {
             const srcY = row * fh + fh * inset;
             c.save();
             c.globalAlpha = alpha;
-            c.translate(cx, cy);
+            c.translate(Math.floor(cx), Math.floor(cy));
             c.rotate(e.rotationAngle || 0);
             if (e.anim.state === 'DEATH') {
                 c.globalAlpha = alpha * (1 - f / 4);
@@ -60,13 +63,14 @@ function drawEnemy(e, c, qualityEffect) {
                 if (e.hitFlash > 0) c.globalAlpha = alpha * (0.5 + 0.5 * (e.hitFlash / 4));
                 c.scale(-scale, scale);
             }
+            const gx = Math.floor(-fw / 2), gy = Math.floor(-fh / 2);
             if (isGhosting) {
                 c.globalAlpha = alpha * 0.5;
-                c.drawImage(sh, srcX, srcY, cropW, cropH, -fw / 2 - 3, -fh / 2, fw, fh);
-                c.drawImage(sh, srcX, srcY, cropW, cropH, -fw / 2 + 3, -fh / 2, fw, fh);
+                c.drawImage(sh, srcX, srcY, cropW, cropH, gx - 3, gy, fw, fh);
+                c.drawImage(sh, srcX, srcY, cropW, cropH, gx + 3, gy, fw, fh);
                 c.globalAlpha = alpha;
             }
-            c.drawImage(sh, srcX, srcY, cropW, cropH, -fw / 2, -fh / 2, fw, fh);
+            c.drawImage(sh, srcX, srcY, cropW, cropH, gx, gy, fw, fh);
             if (e.anim.state !== 'DEATH' && useHeavyEffect) {
                 c.globalCompositeOperation = 'screen';
                 c.globalAlpha = 0.15;
@@ -87,7 +91,7 @@ function drawEnemy(e, c, qualityEffect) {
             const sourceX = frameIndex * frameWidth;
             const scale = 0.25;
             c.save();
-            c.translate(cx, cy);
+            c.translate(Math.floor(cx), Math.floor(cy));
             if (e.anim.state === 'DEATH') {
                 const ds = 1 - f / 4;
                 c.globalAlpha = ds;
@@ -96,13 +100,14 @@ function drawEnemy(e, c, qualityEffect) {
                 if (e.hitFlash > 0) c.globalAlpha = 0.5 + 0.5 * (e.hitFlash / 4);
                 c.scale(-scale, scale);
             }
-            c.drawImage(sh, sourceX, 0, frameWidth, frameHeight, -frameWidth / 2, -frameHeight / 2, frameWidth, frameHeight);
+            const dx6 = Math.floor(-frameWidth / 2), dy6 = Math.floor(-frameHeight / 2);
+            c.drawImage(sh, sourceX, 0, frameWidth, frameHeight, dx6, dy6, frameWidth, frameHeight);
             if (e.anim.state !== 'DEATH' && useHeavyEffect) {
                 c.globalCompositeOperation = 'screen';
                 c.shadowColor = '#4488ff';
                 c.shadowBlur = 6;
                 c.globalAlpha = 0.08;
-                c.drawImage(sh, sourceX, 0, frameWidth, frameHeight, -frameWidth / 2, -frameHeight / 2, frameWidth, frameHeight);
+                c.drawImage(sh, sourceX, 0, frameWidth, frameHeight, dx6, dy6, frameWidth, frameHeight);
                 c.globalAlpha = 1;
                 c.shadowBlur = 0;
                 c.globalCompositeOperation = 'source-over';
@@ -134,7 +139,7 @@ function drawEnemy(e, c, qualityEffect) {
             const shakeX = tension * (Math.random() - 0.5) * 2;
             const shakeY = tension * (Math.random() - 0.5) * 2;
             c.save();
-            c.translate(cx + shakeX, cy + shakeY);
+            c.translate(Math.floor(cx + shakeX), Math.floor(cy + shakeY));
             if (e.anim.state === 'DEATH') {
                 const ds = 1 - f / 4;
                 c.globalAlpha = ds;
@@ -143,13 +148,14 @@ function drawEnemy(e, c, qualityEffect) {
                 if (e.hitFlash > 0) c.globalAlpha = 0.5 + 0.5 * (e.hitFlash / 4);
                 c.scale(-scale, scale);
             }
-            c.drawImage(sh, srcX, srcY, fw, fh, -fw / 2, -fh / 2, fw, fh);
+            const sx2 = Math.floor(-fw / 2), sy2 = Math.floor(-fh / 2);
+            c.drawImage(sh, srcX, srcY, fw, fh, sx2, sy2, fw, fh);
             if (e.anim.state !== 'DEATH' && useHeavyEffect) {
                 c.globalCompositeOperation = 'screen';
                 c.shadowColor = e.spriteKey === 'steam_wolf' ? '#ff8844' : '#00cc88';
                 c.shadowBlur = 6;
                 c.globalAlpha = 0.06;
-                c.drawImage(sh, srcX, srcY, fw, fh, -fw / 2, -fh / 2, fw, fh);
+                c.drawImage(sh, srcX, srcY, fw, fh, sx2, sy2, fw, fh);
                 c.globalAlpha = 1;
                 c.shadowBlur = 0;
                 c.globalCompositeOperation = 'source-over';
@@ -170,7 +176,7 @@ function drawEnemy(e, c, qualityEffect) {
         const srcX = col * fw + fw * inset;
         const srcY = row * fh + fh * inset;
         c.save();
-        c.translate(cx, cy);
+        c.translate(Math.floor(cx), Math.floor(cy));
         if (e.anim.state === 'DEATH') {
             const ds = 1 - f / 4;
             c.globalAlpha = ds;
@@ -179,13 +185,14 @@ function drawEnemy(e, c, qualityEffect) {
             if (e.hitFlash > 0) c.globalAlpha = 0.5 + 0.5 * (e.hitFlash / 4);
             c.scale(-scale, scale);
         }
-        c.drawImage(sh, srcX, srcY, cropW, cropH, -fw / 2, -fh / 2, fw, fh);
+        const dx = Math.floor(-fw / 2), dy = Math.floor(-fh / 2);
+        c.drawImage(sh, srcX, srcY, cropW, cropH, dx, dy, fw, fh);
         if (e.anim.state !== 'DEATH' && useHeavyEffect) {
             c.globalCompositeOperation = 'screen';
             c.shadowColor = '#4488ff';
             c.shadowBlur = 6;
             c.globalAlpha = 0.08;
-            c.drawImage(sh, srcX, srcY, cropW, cropH, -fw / 2, -fh / 2, fw, fh);
+            c.drawImage(sh, srcX, srcY, cropW, cropH, dx, dy, fw, fh);
             c.globalAlpha = 1;
             c.shadowBlur = 0;
             c.globalCompositeOperation = 'source-over';
@@ -196,8 +203,8 @@ function drawEnemy(e, c, qualityEffect) {
             c.font = 'bold 9px monospace';
             c.fillStyle = '#00ffff';
             c.globalAlpha = 0.8 + Math.sin(e.timer * 0.5) * 0.2;
-            c.fillText('ERROR', e.x + 2, e.y - 6);
-            c.translate(cx, cy);
+            c.fillText('ERROR', Math.floor(e.x + 2), Math.floor(e.y - 6));
+            c.translate(Math.floor(cx), Math.floor(cy));
             c.globalCompositeOperation = 'screen';
             c.globalAlpha = 0.25;
             c.fillStyle = '#aaddff';
@@ -211,8 +218,7 @@ function drawEnemy(e, c, qualityEffect) {
             c.strokeStyle = e.isBlue ? '#00ccff' : '#ff44ff';
             c.lineWidth = 2.5;
             c.globalAlpha = glow;
-            c.shadowColor = e.color;
-            c.shadowBlur = 10;
+            if (!ns()) { c.shadowColor = e.color; c.shadowBlur = 10; }
             c.beginPath();
             c.ellipse(0, 0, baseR, baseR * 0.35, Math.PI * 0.15, 0, Math.PI * 2);
             c.stroke();
@@ -249,7 +255,7 @@ function drawEnemy(e, c, qualityEffect) {
     }
 
     c.save();
-    c.translate(e.x, e.y);
+    c.translate(Math.floor(e.x), Math.floor(e.y));
     if (e.isBlue) {
         e.glow += 0.08;
         c.save();
