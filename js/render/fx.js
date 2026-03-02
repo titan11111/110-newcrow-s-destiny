@@ -90,9 +90,9 @@ class FX {
             this.p[i].update(d);
             if (!this.p[i].on) {
                 this.particlePool.release(this.p[i]);
-            } else {
-                i--;
             }
+            /* release で swap+pop すると length が減る。末尾を release したときは i が配列外になるため必ず i を進める */
+            i--;
         }
         if (this.shake > 0) this.shake *= Math.pow(0.9, d);
         if (this.flash > 0) this.flash -= d;
